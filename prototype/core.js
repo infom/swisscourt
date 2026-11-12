@@ -1,14 +1,12 @@
 (function(root){
 'use strict';
 const categories=[
- {id:'xd',name:'Смешанный парный',short:'Микст',code:'XD',color:'green',doubles:true,rounds:5},
  {id:'md',name:'Мужской парный',short:'Мужские пары',code:'MD',color:'blue',doubles:true,rounds:5},
- {id:'ws',name:'Женский одиночный',short:'Женский одиночный',code:'WS',color:'purple',doubles:false,rounds:5}
+ {id:'wd',name:'Женский парный',short:'Женские пары',code:'WD',color:'pink',doubles:true,rounds:5}
 ];
 const names={
- xd:[['Алексей Соколов','Мария Волкова'],['Дмитрий Орлов','Анна Белова'],['Андрей Лебедев','Елена Морозова'],['Илья Новиков','Ольга Соколова'],['Михаил Козлов','Дарья Фомина'],['Павел Павлов','Алина Зайцева'],['Игорь Смирнов','Вера Крылова'],['Никита Петров','Ирина Васильева'],['Роман Попов','Юлия Кузнецова'],['Сергей Егоров','Екатерина Никитина'],['Денис Макаров','Наталья Романова'],['Вадим Захаров','Татьяна Власова']],
- md:[['Артём Иванов','Максим Фёдоров'],['Кирилл Захаров','Олег Тихонов'],['Антон Громов','Виктор Белов'],['Глеб Михайлов','Лев Алексеев'],['Тимур Ким','Давид Мельников'],['Борис Савельев','Юрий Марков'],['Филипп Осипов','Матвей Крылов'],['Руслан Кузьмин','Василий Поляков']],
- ws:[['Анастасия Титова'],['Софья Гусева'],['Ксения Миронова'],['Полина Седова'],['Евгения Карпова'],['Валерия Котова']]
+ md:[['Артём Иванов','Максим Фёдоров'],['Кирилл Захаров','Олег Тихонов'],['Антон Громов','Виктор Белов'],['Глеб Михайлов','Лев Алексеев'],['Тимур Ким','Давид Мельников'],['Борис Савельев','Юрий Марков'],['Филипп Осипов','Матвей Крылов'],['Руслан Кузьмин','Василий Поляков'],['Алексей Соколов','Дмитрий Орлов'],['Андрей Лебедев','Илья Новиков'],['Михаил Козлов','Павел Павлов'],['Игорь Смирнов','Никита Петров']],
+ wd:[['Мария Чернова','Анна Белова'],['Юлия Чернова','Елена Морозова'],['Ольга Соколова','Дарья Фомина'],['Алина Зайцева','Вера Крылова'],['Ирина Васильева','Юлия Кузнецова'],['Екатерина Никитина','Наталья Романова'],['Татьяна Власова','Анастасия Титова'],['Софья Гусева','Ксения Миронова'],['Полина Седова','Евгения Карпова'],['Валерия Котова','Виктория Зорина'],['Елизавета Семёнова','Диана Панова'],['Арина Назарова','Маргарита Ершова']]
 };
 function roundRobin(ids,round=1){
  const list=ids.slice();if(list.length%2)list.push(null);
@@ -18,27 +16,61 @@ function roundRobin(ids,round=1){
 function firstPairs(entries){const sorted=entries.slice().sort((a,b)=>rating(b)-rating(a));if(sorted.length<7)return roundRobin(sorted.map(e=>e.id));const out=[];const half=Math.floor(sorted.length/2);for(let i=0;i<half;i++)out.push([sorted[i].id,sorted[i+half].id]);return out;}
 function rating(entry){return entry.players.reduce((sum,p)=>sum+Number(p.rating),0)/entry.players.length;}
 function seed(mode='live',now=Date.now()){
- const state={version:1,started:mode==='live',settings:{title:'Клубная лига',venue:'Бадминтонный центр «Волан»',date:'2026-11-11',start:'10:00',end:'16:00',courts:4,level:'Любительский дивизион',prepareCount:4},categories:JSON.parse(JSON.stringify(categories)),entries:[],matches:[],history:[]};
+ const state={version:1,started:mode==='live',settings:{title:'Клубная лига · MD / WD',venue:'Бадминтонный центр «Волан»',date:'2026-11-12',start:'10:00',end:'16:00',courts:7,level:'Любительский дивизион',prepareCount:4},categories:JSON.parse(JSON.stringify(categories)),entries:[],matches:[],history:[]};
  for(const cat of categories)names[cat.id].forEach((players,i)=>state.entries.push({id:cat.id+(i+1),category:cat.id,players:players.map((name,j)=>({name,rating:1800-i*43-j*71}))}));
  if(mode==='prep')return state;
  let sequence=1;
  const make=(cat,a,b,round,status,extra={})=>({id:'m'+sequence++,category:cat,a,b,round,status,pinned:false,...extra});
  for(const cat of categories){
   const entries=state.entries.filter(e=>e.category===cat.id);
-  firstPairs(entries).forEach(([a,b],i)=>state.matches.push(make(cat.id,a,b,1,'done',{scores:i%3===0?[[21,17],[18,21],[21,16]]:[[21,14+i],[21,16]],endedAt:now-(45-i*4)*60000})));
+  firstPairs(entries).forEach(([a,b],i)=>state.matches.push(make(cat.id,a,b,1,'done',{scores:i%3===0?[[21,17],[18,21],[21,16]]:[[21,14+i],[21,16]],endedAt:now-(65-i*4)*60000})));
   const ids=entries.map(e=>e.id);
-  if(cat.id==='ws'){
-   roundRobin(ids,2).forEach(([a,b],i)=>state.matches.push(make(cat.id,a,b,2,'done',{scores:[[21,16],[21,18]],endedAt:now-(25-i*9)*60000})));
-   roundRobin(ids,3).forEach(([a,b])=>state.matches.push(make(cat.id,a,b,3,'queued')));
-  }else{
-   const pairs=cat.id==='xd'?[[0,1],[2,3],[4,5],[6,7],[8,9],[10,11]]:[[0,1],[2,3],[4,5],[6,7]];
-   pairs.forEach(([a,b],i)=>{const active=cat.id==='xd'?i<2:i===0;state.matches.push(make(cat.id,ids[a],ids[b],2,active?'playing':'queued',active?{court:cat.id==='xd'?i+1:3,startedAt:now-(cat.id==='xd'?(18-i*7):7)*60000}:{}));});
-  }
+  const pairs=[[0,1],[2,3],[4,5],[6,7],[8,9],[10,11]];
+  const durations=cat.id==='md'?[4,21,18]:[24,16,10];
+  pairs.forEach(([a,b],i)=>state.matches.push(make(cat.id,ids[a],ids[b],2,i<3?'playing':'queued',i<3?{court:(cat.id==='md'?0:3)+i+1,startedAt:now-durations[i]*60000}:{})));
  }
  // Make one ready-to-play match visibly subject to the soft rest threshold.
  const waiting=state.matches.find(m=>m.category==='md'&&m.status==='queued');
  state.matches.filter(m=>m.status==='done'&&[m.a,m.b].includes(waiting.a)).forEach(m=>m.endedAt=now-8*60000);
+ ensureRoundRobinSchedule(state);
  return state;
+}
+function normalizeName(value){return String(value).trim().replace(/\s+/g,' ').toLocaleLowerCase('ru-RU').replace(/ё/g,'е');}
+function playerParts(player){const parts=player.name.trim().split(/\s+/);return {surname:player.surname||parts.at(-1),givenName:player.givenName||parts[0]};}
+function playerLabel(state,player){
+ const {surname,givenName}=playerParts(player);
+ const namesakes=new Set(state.entries.flatMap(e=>e.players).filter(p=>normalizeName(playerParts(p).surname)===normalizeName(surname)).map(p=>normalizeName(p.name)));
+ return (surname+(namesakes.size>1?' '+givenName[0]:'')).toLocaleUpperCase('ru-RU');
+}
+function entryLabel(state,id){return state.entries.find(e=>e.id===id)?.players.map(p=>playerLabel(state,p)).join(' / ')||'—';}
+function entryPlayers(state,id){return state.entries.find(e=>e.id===id)?.players.map(p=>normalizeName(p.name))||[];}
+function sharedPlayers(state,first,second){const other=new Set(second.flatMap(id=>entryPlayers(state,id)));return first.flatMap(id=>entryPlayers(state,id)).filter(name=>other.has(name));}
+function entryActivity(state,id,now=Date.now()){
+ const playing=state.matches.find(m=>m.status==='playing'&&sharedPlayers(state,[id],[m.a,m.b]).length);
+ const previous=state.matches.filter(m=>m.status==='done'&&sharedPlayers(state,[id],[m.a,m.b]).length).sort((a,b)=>b.endedAt-a.endedAt)[0];
+ return {playing,lastEndedAt:previous?.endedAt??null,restMinutes:previous?Math.max(0,Math.floor((now-previous.endedAt)/60000)):null};
+}
+function ensureRoundRobinSchedule(state){
+ if(!state.started)return;
+ for(const category of state.categories){
+  const entries=state.entries.filter(e=>e.category===category.id).sort((a,b)=>rating(b)-rating(a));
+  if(entries.length<2||entries.length>6||entries.length%2)continue;
+  for(let round=1;round<entries.length;round++){
+   if(state.matches.some(m=>m.category===category.id&&m.round===round))continue;
+   roundRobin(entries.map(e=>e.id),round).forEach(([a,b],i)=>state.matches.push({id:'rr-'+category.id+'-'+round+'-'+i,category:category.id,a,b,round,status:'queued',pinned:false}));
+  }
+ }
+}
+function matchAvailability(state,match){
+ if(match.status!=='queued')return {available:false,blockers:[]};
+ const blockers=[];
+ for(const active of state.matches.filter(m=>m.status==='playing'&&m.id!==match.id)){
+  const players=sharedPlayers(state,[match.a,match.b],[active.a,active.b]);
+  if(players.length)blockers.push({type:'busy',court:active.court,matchId:active.id,players});
+ }
+ const earlier=state.matches.filter(m=>m.category===match.category&&m.round<match.round&&m.status!=='done');
+ if(earlier.length){const round=Math.min(...earlier.map(m=>m.round));blockers.push({type:'round',round,remaining:earlier.filter(m=>m.round===round).length});}
+ return {available:match.status==='queued'&&blockers.length===0,blockers};
 }
 function validGame(a,b){if(!Number.isInteger(a)||!Number.isInteger(b)||a<0||b<0||a>30||b>30||a===b)return false;const high=Math.max(a,b),low=Math.min(a,b);return high===21&&low<=19||high>21&&high<30&&high-low===2||high===30&&(low===28||low===29);}
 function validateScores(raw){
@@ -55,17 +87,28 @@ function validateScores(raw){
  return {ok:true,scores,wins,winner:wins[0]===2?0:1};
 }
 function restMinutes(state,match,now=Date.now()){
- const previous=state.matches.filter(m=>m.status==='done'&&m.id!==match.id&&[m.a,m.b].some(id=>id===match.a||id===match.b)).map(m=>m.endedAt);
+ const previous=state.matches.filter(m=>m.status==='done'&&m.id!==match.id&&sharedPlayers(state,[match.a,match.b],[m.a,m.b]).length).map(m=>m.endedAt);
  return previous.length?Math.max(0,Math.floor((now-Math.max(...previous))/60000)):null;
 }
 function queue(state,now=Date.now()){
- const occupied=new Set(state.matches.filter(m=>m.status==='playing').flatMap(m=>[m.a,m.b]));
- return state.matches.filter(m=>m.status==='queued'&&!occupied.has(m.a)&&!occupied.has(m.b)).sort((a,b)=>Number(restMinutes(state,a,now)!==null&&restMinutes(state,a,now)<15)-Number(restMinutes(state,b,now)!==null&&restMinutes(state,b,now)<15));
+ return state.matches.filter(m=>m.status==='queued'&&matchAvailability(state,m).available).sort((a,b)=>Number(restMinutes(state,a,now)!==null&&restMinutes(state,a,now)<15)-Number(restMinutes(state,b,now)!==null&&restMinutes(state,b,now)<15));
+}
+function queueItems(state,now=Date.now()){
+ const ready=queue(state,now);
+ return [...ready,...state.matches.filter(m=>m.status==='queued'&&!matchAvailability(state,m).available).sort((a,b)=>a.round-b.round)];
+}
+function nextForEntry(state,id,now=Date.now(),orderedMatches=queueItems(state,now)){
+ const activity=entryActivity(state,id,now);
+ if(activity.playing)return {kind:'playing',match:activity.playing,activity};
+ const match=orderedMatches.filter(m=>sharedPlayers(state,[id],[m.a,m.b]).length).sort((a,b)=>a.round-b.round)[0];
+ if(match){const availability=matchAvailability(state,match);return {kind:availability.available?'queued':'blocked',match,activity,availability,position:availability.available?orderedMatches.findIndex(m=>m.id===match.id)+1:0};}
+ return {kind:state.started?'waiting':'preparation',activity};
 }
 function assign(state,id,court,now=Date.now()){
  const match=state.matches.find(m=>m.id===id);if(!match||match.status!=='queued')throw Error('Встреча уже изменилась. Обновите список.');
  if(!Number.isInteger(court)||court<1||court>state.settings.courts)throw Error('Выберите существующий корт.');
- if(state.matches.some(m=>m.status==='playing'&&(m.court===court||[m.a,m.b].some(p=>p===match.a||p===match.b))))throw Error('Корт или участник уже занят.');
+ if(state.matches.some(m=>m.status==='playing'&&m.court===court))throw Error('Корт уже занят.');
+ if(!matchAvailability(state,match).available)throw Error('Встреча пока недоступна: игрок занят или предыдущий тур не завершён.');
  match.status='playing';match.court=court;match.startedAt=now;
 }
 function finish(state,id,raw,now=Date.now()){
@@ -86,6 +129,6 @@ function standings(state,category){
  // Shared places for equal points in the sketch; final tie-break rules remain to be agreed.
  rows.sort((a,b)=>b.points-a.points);let place=1;rows.forEach((r,i)=>{if(i===0||r.points!==rows[i-1].points)place=i+1;r.place=place;});return rows;
 }
-const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,restMinutes,queue,assign,finish,returnToQueue,standings};
+const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,restMinutes,queue,queueItems,matchAvailability,entryActivity,nextForEntry,normalizeName,playerParts,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings};
 root.SwissCourtCore=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

@@ -1,0 +1,905 @@
+{
+  "version": 1,
+  "started": true,
+  "settings": {
+    "title": "Клубная лига",
+    "venue": "Бадминтонный центр «Волан»",
+    "date": "2026-11-11",
+    "start": "10:00",
+    "end": "16:00",
+    "courts": 4,
+    "level": "Любительский дивизион",
+    "prepareCount": 4
+  },
+  "categories": [
+    {
+      "id": "xd",
+      "name": "Смешанный парный",
+      "short": "Микст",
+      "code": "XD",
+      "color": "green",
+      "doubles": true,
+      "rounds": 5
+    },
+    {
+      "id": "md",
+      "name": "Мужской парный",
+      "short": "Мужские пары",
+      "code": "MD",
+      "color": "blue",
+      "doubles": true,
+      "rounds": 5
+    },
+    {
+      "id": "ws",
+      "name": "Женский одиночный",
+      "short": "Женский одиночный",
+      "code": "WS",
+      "color": "purple",
+      "doubles": false,
+      "rounds": 5
+    }
+  ],
+  "entries": [
+    {
+      "id": "xd1",
+      "category": "xd",
+      "players": [
+        {
+          "name": "Алексей Соколов",
+          "rating": 1800
+        },
+        {
+          "name": "Мария Чернова",
+          "rating": 1729
+        }
+      ]
+    },
+    {
+      "id": "xd2",
+      "category": "xd",
+      "players": [
+        {
+          "name": "Дмитрий Орлов",
+          "rating": 1757
+        },
+        {
+          "name": "Юлия Чернова",
+          "rating": 1686
+        }
+      ]
+    },
+    {
+      "id": "xd3",
+      "category": "xd",
+      "players": [
+        {
+          "name": "Андрей Лебедев",
+          "rating": 1714
+        },
+        {
+          "name": "Елена Морозова",
+          "rating": 1643
+        }
+      ]
+    },
+    {
+      "id": "xd4",
+      "category": "xd",
+      "players": [
+        {
+          "name": "Илья Новиков",
+          "rating": 1671
+        },
+        {
+          "name": "Ольга Соколова",
+          "rating": 1600
+        }
+      ]
+    },
+    {
+      "id": "xd5",
+      "category": "xd",
+      "players": [
+        {
+          "name": "Михаил Козлов",
+          "rating": 1628
+        },
+        {
+          "name": "Дарья Фомина",
+          "rating": 1557
+        }
+      ]
+    },
+    {
+      "id": "xd6",
+      "category": "xd",
+      "players": [
+        {
+          "name": "Павел Павлов",
+          "rating": 1585
+        },
+        {
+          "name": "Алина Зайцева",
+          "rating": 1514
+        }
+      ]
+    },
+    {
+      "id": "xd7",
+      "category": "xd",
+      "players": [
+        {
+          "name": "Игорь Смирнов",
+          "rating": 1542
+        },
+        {
+          "name": "Вера Крылова",
+          "rating": 1471
+        }
+      ]
+    },
+    {
+      "id": "xd8",
+      "category": "xd",
+      "players": [
+        {
+          "name": "Никита Петров",
+          "rating": 1499
+        },
+        {
+          "name": "Ирина Васильева",
+          "rating": 1428
+        }
+      ]
+    },
+    {
+      "id": "xd9",
+      "category": "xd",
+      "players": [
+        {
+          "name": "Роман Попов",
+          "rating": 1456
+        },
+        {
+          "name": "Юлия Кузнецова",
+          "rating": 1385
+        }
+      ]
+    },
+    {
+      "id": "xd10",
+      "category": "xd",
+      "players": [
+        {
+          "name": "Сергей Егоров",
+          "rating": 1413
+        },
+        {
+          "name": "Екатерина Никитина",
+          "rating": 1342
+        }
+      ]
+    },
+    {
+      "id": "xd11",
+      "category": "xd",
+      "players": [
+        {
+          "name": "Денис Макаров",
+          "rating": 1370
+        },
+        {
+          "name": "Наталья Романова",
+          "rating": 1299
+        }
+      ]
+    },
+    {
+      "id": "xd12",
+      "category": "xd",
+      "players": [
+        {
+          "name": "Вадим Захаров",
+          "rating": 1327
+        },
+        {
+          "name": "Татьяна Власова",
+          "rating": 1256
+        }
+      ]
+    },
+    {
+      "id": "md1",
+      "category": "md",
+      "players": [
+        {
+          "name": "Артём Иванов",
+          "rating": 1800
+        },
+        {
+          "name": "Максим Фёдоров",
+          "rating": 1729
+        }
+      ]
+    },
+    {
+      "id": "md2",
+      "category": "md",
+      "players": [
+        {
+          "name": "Кирилл Захаров",
+          "rating": 1757
+        },
+        {
+          "name": "Олег Тихонов",
+          "rating": 1686
+        }
+      ]
+    },
+    {
+      "id": "md3",
+      "category": "md",
+      "players": [
+        {
+          "name": "Антон Громов",
+          "rating": 1714
+        },
+        {
+          "name": "Виктор Белов",
+          "rating": 1643
+        }
+      ]
+    },
+    {
+      "id": "md4",
+      "category": "md",
+      "players": [
+        {
+          "name": "Глеб Михайлов",
+          "rating": 1671
+        },
+        {
+          "name": "Лев Алексеев",
+          "rating": 1600
+        }
+      ]
+    },
+    {
+      "id": "md5",
+      "category": "md",
+      "players": [
+        {
+          "name": "Тимур Ким",
+          "rating": 1628
+        },
+        {
+          "name": "Давид Мельников",
+          "rating": 1557
+        }
+      ]
+    },
+    {
+      "id": "md6",
+      "category": "md",
+      "players": [
+        {
+          "name": "Борис Савельев",
+          "rating": 1585
+        },
+        {
+          "name": "Юрий Марков",
+          "rating": 1514
+        }
+      ]
+    },
+    {
+      "id": "md7",
+      "category": "md",
+      "players": [
+        {
+          "name": "Филипп Осипов",
+          "rating": 1542
+        },
+        {
+          "name": "Матвей Крылов",
+          "rating": 1471
+        }
+      ]
+    },
+    {
+      "id": "md8",
+      "category": "md",
+      "players": [
+        {
+          "name": "Руслан Кузьмин",
+          "rating": 1499
+        },
+        {
+          "name": "Василий Поляков",
+          "rating": 1428
+        }
+      ]
+    },
+    {
+      "id": "ws1",
+      "category": "ws",
+      "players": [
+        {
+          "name": "Анастасия Титова",
+          "rating": 1800
+        }
+      ]
+    },
+    {
+      "id": "ws2",
+      "category": "ws",
+      "players": [
+        {
+          "name": "Софья Гусева",
+          "rating": 1757
+        }
+      ]
+    },
+    {
+      "id": "ws3",
+      "category": "ws",
+      "players": [
+        {
+          "name": "Ксения Миронова",
+          "rating": 1714
+        }
+      ]
+    },
+    {
+      "id": "ws4",
+      "category": "ws",
+      "players": [
+        {
+          "name": "Полина Седова",
+          "rating": 1671
+        }
+      ]
+    },
+    {
+      "id": "ws5",
+      "category": "ws",
+      "players": [
+        {
+          "name": "Евгения Карпова",
+          "rating": 1628
+        }
+      ]
+    },
+    {
+      "id": "ws6",
+      "category": "ws",
+      "players": [
+        {
+          "name": "Валерия Котова",
+          "rating": 1585
+        }
+      ]
+    }
+  ],
+  "matches": [
+    {
+      "id": "m1",
+      "category": "xd",
+      "a": "xd1",
+      "b": "xd7",
+      "round": 1,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          17
+        ],
+        [
+          18,
+          21
+        ],
+        [
+          21,
+          16
+        ]
+      ],
+      "endedAt": 97300000
+    },
+    {
+      "id": "m2",
+      "category": "xd",
+      "a": "xd2",
+      "b": "xd8",
+      "round": 1,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          15
+        ],
+        [
+          21,
+          16
+        ]
+      ],
+      "endedAt": 97540000
+    },
+    {
+      "id": "m3",
+      "category": "xd",
+      "a": "xd3",
+      "b": "xd9",
+      "round": 1,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          16
+        ],
+        [
+          21,
+          16
+        ]
+      ],
+      "endedAt": 97780000
+    },
+    {
+      "id": "m4",
+      "category": "xd",
+      "a": "xd4",
+      "b": "xd10",
+      "round": 1,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          17
+        ],
+        [
+          18,
+          21
+        ],
+        [
+          21,
+          16
+        ]
+      ],
+      "endedAt": 98020000
+    },
+    {
+      "id": "m5",
+      "category": "xd",
+      "a": "xd5",
+      "b": "xd11",
+      "round": 1,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          18
+        ],
+        [
+          21,
+          16
+        ]
+      ],
+      "endedAt": 98260000
+    },
+    {
+      "id": "m6",
+      "category": "xd",
+      "a": "xd6",
+      "b": "xd12",
+      "round": 1,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          19
+        ],
+        [
+          21,
+          16
+        ]
+      ],
+      "endedAt": 98500000
+    },
+    {
+      "id": "m7",
+      "category": "xd",
+      "a": "xd1",
+      "b": "xd2",
+      "round": 2,
+      "status": "playing",
+      "pinned": false,
+      "court": 1,
+      "startedAt": 98920000
+    },
+    {
+      "id": "m8",
+      "category": "xd",
+      "a": "xd3",
+      "b": "xd4",
+      "round": 2,
+      "status": "playing",
+      "pinned": false,
+      "court": 2,
+      "startedAt": 99340000
+    },
+    {
+      "id": "m9",
+      "category": "xd",
+      "a": "xd5",
+      "b": "xd6",
+      "round": 2,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "m10",
+      "category": "xd",
+      "a": "xd7",
+      "b": "xd8",
+      "round": 2,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "m11",
+      "category": "xd",
+      "a": "xd9",
+      "b": "xd10",
+      "round": 2,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "m12",
+      "category": "xd",
+      "a": "xd11",
+      "b": "xd12",
+      "round": 2,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "m13",
+      "category": "md",
+      "a": "md1",
+      "b": "md5",
+      "round": 1,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          17
+        ],
+        [
+          18,
+          21
+        ],
+        [
+          21,
+          16
+        ]
+      ],
+      "endedAt": 99520000
+    },
+    {
+      "id": "m14",
+      "category": "md",
+      "a": "md2",
+      "b": "md6",
+      "round": 1,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          15
+        ],
+        [
+          21,
+          16
+        ]
+      ],
+      "endedAt": 97540000
+    },
+    {
+      "id": "m15",
+      "category": "md",
+      "a": "md3",
+      "b": "md7",
+      "round": 1,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          16
+        ],
+        [
+          21,
+          16
+        ]
+      ],
+      "endedAt": 97780000
+    },
+    {
+      "id": "m16",
+      "category": "md",
+      "a": "md4",
+      "b": "md8",
+      "round": 1,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          17
+        ],
+        [
+          18,
+          21
+        ],
+        [
+          21,
+          16
+        ]
+      ],
+      "endedAt": 98020000
+    },
+    {
+      "id": "m17",
+      "category": "md",
+      "a": "md1",
+      "b": "md2",
+      "round": 2,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "m18",
+      "category": "md",
+      "a": "md3",
+      "b": "md4",
+      "round": 2,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "m19",
+      "category": "md",
+      "a": "md5",
+      "b": "md6",
+      "round": 2,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "m20",
+      "category": "md",
+      "a": "md7",
+      "b": "md8",
+      "round": 2,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "m21",
+      "category": "ws",
+      "a": "ws1",
+      "b": "ws6",
+      "round": 1,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          17
+        ],
+        [
+          18,
+          21
+        ],
+        [
+          21,
+          16
+        ]
+      ],
+      "endedAt": 97300000
+    },
+    {
+      "id": "m22",
+      "category": "ws",
+      "a": "ws2",
+      "b": "ws5",
+      "round": 1,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          15
+        ],
+        [
+          21,
+          16
+        ]
+      ],
+      "endedAt": 97540000
+    },
+    {
+      "id": "m23",
+      "category": "ws",
+      "a": "ws3",
+      "b": "ws4",
+      "round": 1,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          16
+        ],
+        [
+          21,
+          16
+        ]
+      ],
+      "endedAt": 97780000
+    },
+    {
+      "id": "m24",
+      "category": "ws",
+      "a": "ws1",
+      "b": "ws5",
+      "round": 2,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          16
+        ],
+        [
+          21,
+          18
+        ]
+      ],
+      "endedAt": 98500000
+    },
+    {
+      "id": "m25",
+      "category": "ws",
+      "a": "ws6",
+      "b": "ws4",
+      "round": 2,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          16
+        ],
+        [
+          21,
+          18
+        ]
+      ],
+      "endedAt": 99040000
+    },
+    {
+      "id": "m26",
+      "category": "ws",
+      "a": "ws2",
+      "b": "ws3",
+      "round": 2,
+      "status": "done",
+      "pinned": false,
+      "scores": [
+        [
+          21,
+          16
+        ],
+        [
+          21,
+          18
+        ]
+      ],
+      "endedAt": 99580000
+    },
+    {
+      "id": "m27",
+      "category": "ws",
+      "a": "ws1",
+      "b": "ws4",
+      "round": 3,
+      "status": "playing",
+      "pinned": false,
+      "court": 3,
+      "startedAt": 99580000
+    },
+    {
+      "id": "m28",
+      "category": "ws",
+      "a": "ws5",
+      "b": "ws3",
+      "round": 3,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "m29",
+      "category": "ws",
+      "a": "ws6",
+      "b": "ws2",
+      "round": 3,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "rr-ws-4-0",
+      "category": "ws",
+      "a": "ws1",
+      "b": "ws3",
+      "round": 4,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "rr-ws-4-1",
+      "category": "ws",
+      "a": "ws4",
+      "b": "ws2",
+      "round": 4,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "rr-ws-4-2",
+      "category": "ws",
+      "a": "ws5",
+      "b": "ws6",
+      "round": 4,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "rr-ws-5-0",
+      "category": "ws",
+      "a": "ws1",
+      "b": "ws2",
+      "round": 5,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "rr-ws-5-1",
+      "category": "ws",
+      "a": "ws3",
+      "b": "ws6",
+      "round": 5,
+      "status": "queued",
+      "pinned": false
+    },
+    {
+      "id": "rr-ws-5-2",
+      "category": "ws",
+      "a": "ws4",
+      "b": "ws5",
+      "round": 5,
+      "status": "queued",
+      "pinned": false
+    }
+  ],
+  "history": []
+}

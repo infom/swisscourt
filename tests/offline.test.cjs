@@ -12,6 +12,7 @@ test('offline worker atomically caches the app, serves cached navigation and nev
  vm.runInContext(fs.readFileSync('app/sw.js','utf8').replace('__BUILD__','test'),context);
  let pending;events.get('install')({waitUntil:p=>pending=p});await pending;
  assert.ok(saved.has('https://swiss.example/tournament.js'));assert.ok(saved.has('https://swiss.example/real-ui.js'));
+ assert.ok(saved.has('https://swiss.example/scheduling.js'));assert.ok(saved.has('https://swiss.example/scheduling-worker.js'));
  events.get('activate')({waitUntil:p=>pending=p});await pending;assert.equal(claimed,true);
  events.get('fetch')({request:{url:'https://swiss.example/?scenario=real#board',method:'GET',mode:'navigate'},respondWith:p=>pending=p});
  assert.deepEqual(await pending,{body:'./index.html'});assert.equal(network,0);

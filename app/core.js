@@ -82,7 +82,7 @@ function matchAvailability(state,match){
   const players=sharedPlayers(state,[match.a,match.b],[active.a,active.b]);
   if(players.length)blockers.push({type:'busy',court:active.court,matchId:active.id,players});
  }
- const earlier=state.matches.filter(m=>m.category===match.category&&m.round<match.round&&m.status!=='done');
+ const earlier=state.matches.filter(m=>m.category===match.category&&m.round<match.round&&m.status!=='done'&&(state.kind!=='tournament'||sharedPlayers(state,[match.a,match.b],[m.a,m.b]).length));
  if(earlier.length){const round=Math.min(...earlier.map(m=>m.round));blockers.push({type:'round',round,remaining:earlier.filter(m=>m.round===round).length});}
  return {available:match.status==='queued'&&blockers.length===0,blockers};
 }

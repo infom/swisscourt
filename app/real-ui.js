@@ -1,5 +1,37 @@
 'use strict';
 let realDraft=null,importPreview=null,importRequest=0,backupPreview=null;
+const A=SwissCourtScheduling;
+let scheduleJob=null,scheduledSignature='',scheduleError='';
+async function scheduleReadyMatches(force=false){
+ if(mode!=='real'||boardMode||!editorReady||storageError||!state.started||state.closed){if(scheduleJob){scheduleJob.cancelled=true;scheduleJob.worker?.terminate();scheduleJob=null;}return;}
+ const signature=A.signature(state);
+ if(!force&&(scheduleJob?.signature===signature||scheduledSignature===signature))return;
+ if(scheduleJob){scheduleJob.cancelled=true;scheduleJob.worker?.terminate();}
+ const job={signature,cancelled:false,worker:null};scheduleJob=job;scheduleError='';
+ const snapshot=structuredClone(state);
+ try{
+  for(const category of snapshot.categories){
+   if(T.seeded(snapshot,category.id).length<7)continue;
+   const proposal=typeof Worker==='function'?await new Promise((resolve,reject)=>{
+    const worker=new Worker('./scheduling-worker.js');job.worker=worker;
+    worker.onmessage=event=>{worker.terminate();job.worker=null;event.data.error?reject(Error(event.data.error)):resolve(event.data.proposal);};
+    worker.onerror=()=>{worker.terminate();job.worker=null;reject(Error('Не удалось рассчитать досрочные встречи.'));};
+    worker.postMessage({state:snapshot,category:category.id});
+   }):await Promise.resolve().then(()=>A.plan(snapshot,category.id));
+   if(job.cancelled||scheduleJob!==job||A.signature(state)!==signature)return;
+   if(proposal){
+    // Pin/court changes do not affect the proof. Rebase only after verifying
+    // the full pairing-input signature, never just the round or game count.
+    proposal.revision=state.revision;
+    const next=structuredClone(state);A.apply(next,proposal);
+    scheduleJob=null;
+    if(persist(next)){render();if(proposal.matches.length)toast('В очередь добавлено встреч: '+proposal.matches.length+(proposal.complete?'':' · можно вызывать до окончания тура'));}
+    return;
+   }
+  }
+  if(scheduleJob===job){scheduledSignature=signature;scheduleJob=null;}
+ }catch(error){if(!job.cancelled&&scheduleJob===job){scheduleError=error.message;scheduleJob=null;scheduledSignature=signature;render();toast(error.message);}}
+}
 function appNotice(){
  if(mode!=='real')return '<div class="app-notice">Демонстрация · данные вымышленные. <a href="./">Открыть мой турнир</a></div>';
  if(!editorReady&&!boardMode)return '<div class="app-notice" role="status">'+(editorBusy?'Этот день уже открыт для редактирования в другой вкладке. Здесь доступен просмотр.':'Подключение к локальному игровому дню…')+' <button class="btn small" data-action="editor">Продолжить здесь</button></div>';
@@ -13,6 +45,7 @@ async function acquireEditor(){
   if(!lock){editorBusy=true;render();return;}
   editorReady=true;editorBusy=false;loadState();render();
   if(!storageError&&!localStorage.getItem(D.key))persist(state);
+  scheduleReadyMatches();
   navigator.storage?.persist?.().catch(()=>{});
   await new Promise(()=>{}); // Released by the browser when this organizer tab closes.
  });
@@ -22,8 +55,8 @@ function roundControls(){
  const complete=state.categories.every(c=>T.roundStatus(state,c.id).complete);
  return '<div class="round-controls">'+state.categories.map(c=>{
   const r=T.roundStatus(state,c.id),swiss=T.seeded(state,c.id).length>=7;
-  return '<div>'+badge(c.id)+'<span>'+(r.complete?'Все встречи завершены':'Тур '+currentRound(c.id)+' / '+r.totalRounds)+'</span>'+(r.canDraw?'<button class="btn primary small" data-action="next-round" data-id="'+c.id+'">Сформировать тур '+(r.round+1)+'</button>':'')+(!state.closed&&swiss&&r.round>1&&state.matches.filter(m=>m.category===c.id&&m.round===r.round).every(m=>m.status==='queued')?'<button class="btn small" data-action="offer-redraw" data-id="'+c.id+'">Пересчитать тур</button>':'')+'</div>';
- }).join('')+(complete&&!state.closed?'<button class="btn primary" data-action="close-day">Завершить день</button>':'')+'</div>';
+  return '<div>'+badge(c.id)+'<span>'+(r.complete?'Все встречи завершены':'Тур '+currentRound(c.id)+' / '+r.totalRounds)+(r.partial?' · встречи тура '+r.round+' добавляются досрочно':'')+'</span>'+(r.canDraw?'<button class="btn primary small" data-action="next-round" data-id="'+c.id+'">Сформировать тур '+(r.round+1)+'</button>':'')+(!state.closed&&swiss&&!r.partial&&r.round>1&&state.matches.filter(m=>m.category===c.id&&m.round===r.round).every(m=>m.status==='queued')?'<button class="btn small" data-action="offer-redraw" data-id="'+c.id+'">Пересчитать тур</button>':'')+'</div>';
+ }).join('')+(scheduleError?'<button class="btn small" data-action="retry-scheduling">Повторить расчёт очереди</button>':'')+(complete&&!state.closed?'<button class="btn primary" data-action="close-day">Завершить день</button>':'')+'</div>';
 }
 function dayTools(){
  const real=mode==='real';
@@ -84,6 +117,7 @@ document.addEventListener('click',event=>{
  const action=target.dataset.action,id=target.dataset.id;
  if(boardMode&&!['backup','fetch-category','fetch-import'].includes(action))return;
  switch(action){
+ case 'retry-scheduling':scheduleReadyMatches(true);break;
  case 'editor':acquireEditor();break;
  case 'next-round':realDrawDialog(id);break;
  case 'offer-redraw':offerRedraw(id);break;

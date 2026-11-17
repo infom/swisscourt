@@ -5,7 +5,7 @@ const T=require('../app/tournament.js'),D=require('../app/storage.js');
 function day(n=8){const s=T.newDay();s.categories=s.categories.filter(c=>c.id==='md');for(let i=0;i<n;i++)s.entries.push({id:'e'+i,category:'md',players:[0,1].map(j=>({name:'Имя Фамилия'+i+j,rating:1000+i*20+j}))});return s;}
 test('real application starts with empty persisted day and approved court/table design',()=>{
  const ui=boot();assert.equal(ui.run('mode'),'real');assert.equal(ui.run('state.entries.length'),0);assert.equal(ui.run('editorReady'),true);
- assert.ok(ui.storage.has(D.key));assert.match(ui.html(),/v1.0.0/);assert.ok(!ui.html().includes('ЭСКИЗ'));
+ assert.ok(ui.storage.has(D.key));assert.match(ui.html(),/v1.0.1/);assert.ok(!ui.html().includes('ЭСКИЗ'));
  ui.run('view="settings";render()');assert.match(ui.html(),/Резервная копия/);assert.match(ui.html(),/Выбрать разряды/);
 });
 test('real UI starts odd field, publishes next round and retains entered scores after reopening',()=>{

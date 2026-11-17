@@ -28,6 +28,8 @@ function validate(state,{ready=false}={}){
  if(!Array.isArray(state.categories)||state.categories.length<1||state.categories.length>3||new Set(state.categories.map(c=>c.id)).size!==state.categories.length)fail('Выберите от одного до трёх разных разрядов.');
  for(const cat of state.categories){const known=divisions.find(c=>c.id===cat.id);if(!known||cat.code!==known.code||cat.doubles!==known.doubles||![4,5].includes(cat.rounds))fail('Проверьте параметры разрядов.');}
  if(!Array.isArray(state.entries)||!Array.isArray(state.matches)||!Array.isArray(state.byes)||!Array.isArray(state.history))fail('Повреждены данные турнира.');
+ const partials=state.partialRounds||[];
+ if(!Array.isArray(partials)||new Set(partials.map(p=>p.category)).size!==partials.length||partials.some(p=>!state.categories.some(c=>c.id===p.category)||!Number.isInteger(p.round)||p.round<2||p.round>roundCount(state,p.category)||state.entries.filter(e=>e.category===p.category).length<7))fail('Неверные данные частично сформированного тура.');
  const ids=new Set(),players=new Set();
  for(const entry of state.entries){
   const category=state.categories.find(c=>c.id===entry.category);
@@ -65,14 +67,16 @@ function validate(state,{ready=false}={}){
   seenRounds.add(rk);byeEntries.add(e.id);
  }
  for(const h of state.history)if(!seenIds.has(h.matchId)||!Number.isFinite(h.at)||!Array.isArray(h.old)||!Array.isArray(h.new)||!C.validateScores(h.old).ok||!C.validateScores(h.new).ok)fail('Повреждена история исправлений.');
- if(!state.started&&(state.matches.length||state.byes.length))fail('Незапущенный день содержит встречи.');
+ if(!state.started&&(state.matches.length||state.byes.length||partials.length))fail('Незапущенный день содержит встречи.');
  if(state.started)for(const cat of state.categories){
-  const n=state.entries.filter(e=>e.category===cat.id).length,matches=state.matches.filter(m=>m.category===cat.id),rounds=Math.max(0,...matches.map(m=>m.round));
+  const n=state.entries.filter(e=>e.category===cat.id).length,matches=state.matches.filter(m=>m.category===cat.id),partial=partials.find(p=>p.category===cat.id),rounds=Math.max(partial?.round||0,...matches.map(m=>m.round));
   if(rounds<1||rounds>roundCount(state,cat.id))fail('Неверное число опубликованных туров.');
+  if(partial&&partial.round!==rounds)fail('Только последний тур может быть сформирован частично.');
   for(let r=1;r<=rounds;r++){
-   if(matches.filter(m=>m.round===r).length!==Math.floor(n/2))fail('В туре отсутствуют встречи.');
-   if(state.byes.filter(b=>b.category===cat.id&&b.round===r).length!==(n>=7?n%2:0))fail('Неверные пропуски тура.');
-   if(matches.some(m=>m.round===r&&m.status!=='queued')&&matches.some(m=>m.round<r&&m.status!=='done'))fail('Следующий тур начат до завершения предыдущего.');
+   const current=matches.filter(m=>m.round===r),isPartial=partial?.round===r;
+   if(isPartial?(current.length>Math.floor(n/2)||current.some(m=>m.early!==true)):current.length!==Math.floor(n/2))fail('В туре отсутствуют встречи.');
+   if(state.byes.filter(b=>b.category===cat.id&&b.round===r).length!==(n>=7&&!isPartial?n%2:0))fail('Неверные пропуски тура.');
+   for(const m of current.filter(m=>m.status!=='queued'))if(matches.some(previous=>previous.round<r&&previous.status!=='done'&&[previous.a,previous.b].some(eid=>[m.a,m.b].includes(eid))))fail('Пара ещё не завершила свою предыдущую встречу.');
   }
  }
  if(state.closed&&(!state.started||!state.categories.every(c=>roundStatus(state,c.id).complete)))fail('День ещё не завершён.');
@@ -83,56 +87,62 @@ function seeded(state,category){
 }
 function roundCount(state,category){const n=state.entries.filter(e=>e.category===category).length;return n<7?n-1+n%2:state.categories.find(c=>c.id===category).rounds;}
 function roundStatus(state,category){
- const matches=state.matches.filter(m=>m.category===category),round=Math.max(0,...matches.map(m=>m.round));
+ const matches=state.matches.filter(m=>m.category===category),partial=(state.partialRounds||[]).find(p=>p.category===category),round=Math.max(partial?.round||0,...matches.map(m=>m.round));
  const totalRounds=roundCount(state,category),pending=matches.some(m=>m.status!=='done');
- return {round,totalRounds,pending,complete:state.started&&round>=totalRounds&&!pending,canDraw:state.started&&!state.closed&&!pending&&round<totalRounds};
+ return {round,totalRounds,pending,partial:!!partial,complete:state.started&&round>=totalRounds&&!pending&&!partial,canDraw:state.started&&!state.closed&&!pending&&!partial&&round<totalRounds};
 }
 const addCost=(a,b)=>a.map((v,i)=>v+b[i]);
 const compareCost=(a,b)=>{for(let i=0;i<a.length;i++)if(a[i]!==b[i])return a[i]-b[i];return 0;};
-function swissPairs(state,category,round){
+function swissPairs(state,category,round,{locked=[],points=null}={}){
  const entries=seeded(state,category),rank=new Map(entries.map((e,i)=>[e.id,i]));
- const rows=C.standings(state,category).sort((a,b)=>b.points-a.points||rank.get(a.entry.id)-rank.get(b.entry.id));
+ const rows=(points?entries.map(entry=>({entry,points:points.get(entry.id)})):C.standings(state,category)).sort((a,b)=>b.points-a.points||rank.get(a.entry.id)-rank.get(b.entry.id));
+ const lockedIds=new Set(locked.flatMap(m=>[m.a,m.b]));
  const seen=new Set(state.matches.map(m=>key(m.a,m.b)));
- const candidates=rows.length%2?rows.filter(r=>!state.byes.some(b=>b.entryId===r.entry.id)).slice().reverse():[null];
+ const candidates=rows.length%2?rows.filter(r=>!lockedIds.has(r.entry.id)&&!state.byes.some(b=>b.entryId===r.entry.id)).slice().reverse():[null];
  for(const bye of candidates){
-  const rest=rows.filter(r=>r!==bye);
+  const rest=rows.filter(r=>r!==bye&&!lockedIds.has(r.entry.id));
   if(round===1){const half=rest.length/2;return {pairs:rest.slice(0,half).map((r,i)=>[r.entry.id,rest[i+half].entry.id]),bye:bye?.entry.id||null};}
   const memo=new Map(),bits=rest.map((_,i)=>1n<<BigInt(i));
+  const allowed=rest.map(a=>rest.map(b=>a!==b&&!seen.has(key(a.entry.id,b.entry.id))));
+  const costs=rest.map(a=>rest.map(b=>{
+   const direction=Math.sign(a.points-b.points);
+   const floats=direction?state.matches.filter(m=>m.round<round&&((m.a===a.entry.id&&m.floatA===direction)||(m.b===a.entry.id&&m.floatB===direction)||(m.a===b.entry.id&&m.floatA===-direction)||(m.b===b.entry.id&&m.floatB===-direction))).length:0;
+   return [Math.abs(a.points-b.points),floats,Math.abs(rank.get(a.entry.id)-rank.get(b.entry.id))];
+  }));
   function solve(mask){
    if(mask===0n)return {cost:[0,0,0],pairs:[]};
    if(memo.has(mask))return memo.get(mask);
    // Choose the most constrained vertex first; still examine all possible matchings.
    let first=-1,options=[];
    for(let i=0;i<rest.length;i++)if(mask&bits[i]){
-    const available=[];for(let j=0;j<rest.length;j++)if(j!==i&&(mask&bits[j])&&!seen.has(key(rest[i].entry.id,rest[j].entry.id)))available.push(j);
+    const available=[];for(let j=0;j<rest.length;j++)if((mask&bits[j])&&allowed[i][j])available.push(j);
     if(first===-1||available.length<options.length){first=i;options=available;}
    }
    let best=null;
    for(const j of options){
     const a=rest[first],b=rest[j],tail=solve(mask^bits[first]^bits[j]);if(!tail)continue;
-    const direction=Math.sign(a.points-b.points);
-    const floats=state.matches.filter(m=>m.round<round&&((m.a===a.entry.id&&m.floatA===direction)||(m.b===a.entry.id&&m.floatB===direction)||(m.a===b.entry.id&&m.floatA===-direction)||(m.b===b.entry.id&&m.floatB===-direction))).length;
-    const cost=addCost(tail.cost,[Math.abs(a.points-b.points),direction?floats:0,Math.abs(rank.get(a.entry.id)-rank.get(b.entry.id))]);
+    const cost=addCost(tail.cost,costs[first][j]);
     if(!best||compareCost(cost,best.cost)<0)best={cost,pairs:[[a.entry.id,b.entry.id],...tail.pairs]};
    }
    memo.set(mask,best);return best;
   }
   const matched=solve((1n<<BigInt(rest.length))-1n);
-  if(matched)return {pairs:matched.pairs,bye:bye?.entry.id||null};
+  if(matched)return {pairs:[...locked.map(m=>[m.a,m.b]),...matched.pairs],bye:bye?.entry.id||null};
  }
  fail('Невозможно сформировать тур без повторных соперников и повторного пропуска. Опубликованные встречи сохранены.');
 }
-function draw(state,category,round){
+function draw(state,category,round,options={}){
  const entries=seeded(state,category),swiss=entries.length>=7;
  if(entries.length<2)fail('В разряде недостаточно участников.');
  if(round>roundCount(state,category))fail('Все туры уже сформированы.');
- const pairs=swiss?swissPairs(state,category,round):{pairs:C.roundRobin(entries.map(e=>e.id),round),bye:null};
- const points=new Map(C.standings(state,category).map(r=>[r.entry.id,r.points]));
+ const pairs=swiss?swissPairs(state,category,round,options):{pairs:C.roundRobin(entries.map(e=>e.id),round),bye:null};
+ const points=options.points||new Map(C.standings(state,category).map(r=>[r.entry.id,r.points]));
  return {category,round,matches:pairs.pairs.map(([a,b],i)=>({id:category+'-'+round+'-'+i,category,round,a,b,status:'queued',pinned:false,floatA:Math.sign(points.get(a)-points.get(b)),floatB:Math.sign(points.get(b)-points.get(a))})),
   bye:pairs.bye?{id:'bye-'+category+'-'+round,entryId:pairs.bye,category,round}:null};
 }
 function publish(state,proposal){
  if(state.closed)fail('День завершён. Сначала откройте его для исправления.');
+ if((state.partialRounds||[]).some(p=>p.category===proposal.category))fail('Досрочный тур дополняется автоматически.');
  if(state.matches.some(m=>m.category===proposal.category&&m.round===proposal.round))fail('Этот тур уже опубликован.');
  if(proposal.round!==Math.max(0,...state.matches.filter(m=>m.category===proposal.category).map(m=>m.round))+1)fail('Туры публикуются по порядку.');
  if(state.matches.some(m=>m.category===proposal.category&&m.round<proposal.round&&m.status!=='done'))fail('Завершите предыдущий тур.');
@@ -151,6 +161,7 @@ function start(state){
  state.started=true;return validate(state);
 }
 function redraw(state,category){
+ if((state.partialRounds||[]).some(p=>p.category===category))fail('Досрочный тур пересчитывается автоматически после результата.');
  const round=Math.max(...state.matches.filter(m=>m.category===category).map(m=>m.round));
  const target=state.matches.filter(m=>m.category===category&&m.round===round);
  if(target.some(m=>m.status!=='queued')||seeded(state,category).length<7)fail('Начавшийся тур нельзя жеребить заново.');
@@ -159,8 +170,13 @@ function redraw(state,category){
 }
 function finish(state,matchId,scores,now=Date.now()){
  if(state.closed)fail('Откройте завершённый день для исправления.');
- const match=state.matches.find(m=>m.id===matchId),correcting=match?.status==='done';
+ const match=state.matches.find(m=>m.id===matchId),correcting=match?.status==='done',oldWinner=correcting?C.validateScores(match.scores).winner:null;
  C.finish(state,matchId,scores,now);
+ // A corrected earlier score can invalidate uncalled early pairs. Keep every
+ // started/finished game; the scheduler proves new pairs against those locks.
+ const partial=(state.partialRounds||[]).find(p=>p.category===match.category&&p.round>match.round);
+ if(correcting&&partial&&oldWinner!==C.validateScores(scores).winner){state.matches=state.matches.filter(m=>m.category!==partial.category||m.round!==partial.round||m.status!=='queued');return {redraw:null,recheck:true};}
+ if(partial)return {redraw:null};
  const next=state.matches.filter(m=>m.category===match.category&&m.round>match.round);
  return {redraw:correcting&&next.length>0&&next.every(m=>m.status==='queued')&&seeded(state,match.category).length>=7?match.category:null};
 }

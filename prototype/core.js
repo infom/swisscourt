@@ -26,7 +26,7 @@ function seed(mode='live',now=Date.now()){
   firstPairs(entries).forEach(([a,b],i)=>state.matches.push(make(cat.id,a,b,1,'done',{scores:i%3===0?[[21,17],[18,21],[21,16]]:[[21,14+i],[21,16]],endedAt:now-(65-i*4)*60000})));
   const ids=entries.map(e=>e.id);
   const pairs=[[0,1],[2,3],[4,5],[6,7],[8,9],[10,11]];
-  const durations=cat.id==='md'?[4,21,18]:[24,16,10];
+  const durations=cat.id==='md'?[1,24,12]:[35,18,8];
   pairs.forEach(([a,b],i)=>state.matches.push(make(cat.id,ids[a],ids[b],2,i<3?'playing':'queued',i<3?{court:(cat.id==='md'?0:3)+i+1,startedAt:now-durations[i]*60000}:{})));
  }
  // Make one ready-to-play match visibly subject to the soft rest threshold.
@@ -49,6 +49,20 @@ function entryActivity(state,id,now=Date.now()){
  const playing=state.matches.find(m=>m.status==='playing'&&sharedPlayers(state,[id],[m.a,m.b]).length);
  const previous=state.matches.filter(m=>m.status==='done'&&sharedPlayers(state,[id],[m.a,m.b]).length).sort((a,b)=>b.endedAt-a.endedAt)[0];
  return {playing,lastEndedAt:previous?.endedAt??null,restMinutes:previous?Math.max(0,Math.floor((now-previous.endedAt)/60000)):null};
+}
+function courtTiming(minutes){return minutes<2?'called':minutes<20?'normal':minutes<30?'long':'delayed';}
+function restTiming(minutes){return minutes===null?'unplayed':minutes<5?'critical':minutes<15?'short':minutes<60?'normal':minutes<90?'long':'overdue';}
+function entryProgress(state,id){
+ const games=state.matches.filter(m=>m.status==='done'&&(m.a===id||m.b===id))
+  .slice().sort((a,b)=>a.round-b.round||a.endedAt-b.endedAt).flatMap(m=>{
+   const result=validateScores(m.scores);if(!result.ok)return [];
+   const side=m.a===id?0:1;
+   return [{matchId:m.id,round:m.round,opponentId:side===0?m.b:m.a,won:result.winner===side,
+    setsFor:result.wins[side],setsAgainst:result.wins[1-side],deciding:m.scores.length===3,
+    scores:m.scores.map(game=>[game[side],game[1-side]])}];
+  });
+ const byes=(state.byes||[]).filter(bye=>bye.entryId===id).map(bye=>({matchId:bye.id,round:bye.round,bye:true,deciding:false}));
+ return [...games,...byes].sort((a,b)=>a.round-b.round);
 }
 function ensureRoundRobinSchedule(state){
  if(!state.started)return;
@@ -120,15 +134,63 @@ function finish(state,id,raw,now=Date.now()){
  return result;
 }
 function returnToQueue(state,id){const match=state.matches.find(m=>m.id===id);if(!match||match.status!=='playing')throw Error('Встреча уже не находится на корте.');match.status='queued';delete match.court;delete match.startedAt;}
-function standings(state,category){
- const rows=state.entries.filter(e=>e.category===category).map(e=>({entry:e,played:0,wins:0,losses:0,points:0,setsFor:0,setsAgainst:0,ballFor:0,ballAgainst:0,buchholz:0,berger:0}));
- const map=new Map(rows.map(r=>[r.entry.id,r]));
- const done=state.matches.filter(m=>m.category===category&&m.status==='done');
- for(const m of done){const result=validateScores(m.scores);if(!result.ok)continue;for(let side=0;side<2;side++){const r=map.get(side===0?m.a:m.b);r.played++;r.wins+=result.winner===side?1:0;r.losses+=result.winner!==side?1:0;r.points=r.wins;r.setsFor+=result.wins[side];r.setsAgainst+=result.wins[1-side];for(const game of m.scores){r.ballFor+=game[side];r.ballAgainst+=game[1-side];}}}
- for(const m of done){const a=map.get(m.a),b=map.get(m.b),result=validateScores(m.scores);a.buchholz+=b.points;b.buchholz+=a.points;if(result.winner===0)a.berger+=b.points;else b.berger+=a.points;}
- // Shared places for equal points in the sketch; final tie-break rules remain to be agreed.
- rows.sort((a,b)=>b.points-a.points);let place=1;rows.forEach((r,i)=>{if(i===0||r.points!==rows[i-1].points)place=i+1;r.place=place;});return rows;
+function rankStandings(rows,done,swiss=true){
+ // Resolve whole tied groups at each step. Head-to-head is not a pairwise sort:
+ // applying it inside a three-way tie would produce a non-transitive order.
+ function split(groups,compare){
+  return groups.flatMap(group=>{
+   const sorted=group.slice().sort(compare),parts=[];
+   for(const row of sorted){
+    if(!parts.length||compare(parts.at(-1)[0],row)!==0)parts.push([]);
+    parts.at(-1).push(row);
+   }
+   return parts;
+  });
+ }
+ const descending=key=>(a,b)=>b[key]-a[key];
+ let groups=split([rows],descending('points'));
+ if(swiss){
+  groups=split(groups,descending('buchholz'));
+  groups=split(groups,descending('berger'));
+  groups=groups.flatMap(group=>{
+   if(group.length!==2)return [group];
+   const [a,b]=group,meeting=done.filter(m=>[m.a,m.b].includes(a.entry.id)&&[m.a,m.b].includes(b.entry.id));
+   if(meeting.length!==1)return [group];
+   const result=validateScores(meeting[0].scores);if(!result.ok)return [group];
+   const winner=result.winner===0?meeting[0].a:meeting[0].b;
+   group.forEach(row=>row.headToHead=winner);
+   return group[0].entry.id===winner?[[group[0]],[group[1]]]:[[group[1]],[group[0]]];
+  });
+  const ratio=(forKey,againstKey)=>(a,b)=>{
+   const x=a[againstKey]===0?(a[forKey]>0?Infinity:0):a[forKey]/a[againstKey];
+   const y=b[againstKey]===0?(b[forKey]>0?Infinity:0):b[forKey]/b[againstKey];
+   return x===y?0:x>y?-1:1;
+  };
+  groups=split(groups,ratio('setsFor','setsAgainst'));
+  groups=split(groups,ratio('ballFor','ballAgainst'));
+ }
+ let place=1;
+ return groups.flatMap(group=>{
+  group.forEach(row=>{row.place=place;row.tied=group.length>1;row.tieSize=group.length;});
+  place+=group.length;return group;
+ });
 }
-const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,restMinutes,queue,queueItems,matchAvailability,entryActivity,nextForEntry,normalizeName,playerParts,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings};
+function standings(state,category){
+ const rows=state.entries.filter(e=>e.category===category).map(e=>({entry:e,played:0,wins:0,losses:0,points:0,byes:0,setsFor:0,setsAgainst:0,ballFor:0,ballAgainst:0,buchholz:0,berger:0}));
+ const map=new Map(rows.map(r=>[r.entry.id,r]));
+ const done=state.matches.filter(m=>m.category===category&&m.status==='done'&&map.has(m.a)&&map.has(m.b)&&validateScores(m.scores).ok);
+ for(const m of done){const result=validateScores(m.scores);if(!result.ok)continue;for(let side=0;side<2;side++){const r=map.get(side===0?m.a:m.b);r.played++;r.wins+=result.winner===side?1:0;r.losses+=result.winner!==side?1:0;r.points=r.wins;r.setsFor+=result.wins[side];r.setsAgainst+=result.wins[1-side];for(const game of m.scores){r.ballFor+=game[side];r.ballAgainst+=game[1-side];}}}
+ // A bye grants a point without creating a game, a win or synthetic scores.
+ for(const bye of state.byes||[]){const row=map.get(bye.entryId);if(row){row.points++;row.byes++;}}
+ for(const m of done){const a=map.get(m.a),b=map.get(m.b),result=validateScores(m.scores);a.buchholz+=b.points;b.buchholz+=a.points;if(result.winner===0)a.berger+=b.points;else b.berger+=a.points;}
+ const swiss=rows.length>=7,rounds=state.categories.find(c=>c.id===category)?.rounds||0;
+ if(swiss)for(const row of rows){
+  // REQUIREMENTS.md §8.5: virtual opponent for an assigned bye, V = min(S,T/2).
+  row.byeOpponentPoints=row.byes*Math.min(row.points,rounds/2);
+  row.buchholz+=row.byeOpponentPoints;row.berger+=row.byeOpponentPoints;
+ }
+ return rankStandings(rows,done,swiss);
+}
+const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,restMinutes,queue,queueItems,matchAvailability,entryActivity,entryProgress,courtTiming,restTiming,nextForEntry,normalizeName,playerParts,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings,rankStandings};
 root.SwissCourtCore=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

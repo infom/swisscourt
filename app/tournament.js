@@ -35,12 +35,12 @@ function validate(state,{ready=false}={}){
   const category=state.categories.find(c=>c.id===entry.category);
   if(!category||!safeId(entry.id)||ids.has(entry.id)||!Array.isArray(entry.players)||entry.players.length!==(category.doubles?2:1))fail('Проверьте состав участников.');ids.add(entry.id);
   for(const p of entry.players){
-   if(typeof p.name!=='string'||p.name.trim().split(/\s+/).length<2||p.name.length>160)fail('Нужны имя и фамилия каждого игрока.');
+   if(typeof p.name!=='string'||p.name.trim().split(/\s+/).length<2||p.name.length>160)fail('Нужны фамилия и имя каждого игрока.');
    const identity=p.sourceId?'source:'+p.sourceId:C.normalizeName(p.name);
    const name=C.normalizeName(p.name);
-   if(players.has(identity)||players.has(name))fail('Игрок '+p.name+' уже есть в игровом дне.');players.add(identity);players.add(name);
+   if(players.has(identity)||players.has(name))fail('Игрок '+C.playerFullName(p)+' уже есть в игровом дне.');players.add(identity);players.add(name);
    if(p.rating!==null&&(!Number.isFinite(p.rating)||p.rating<0||p.rating>99999))fail('Рейтинг должен быть числом от 0 до 99999.');
-   if((ready||state.started)&&p.rating===null)fail('Заполните рейтинг: '+p.name+'.');
+   if((ready||state.started)&&p.rating===null)fail('Заполните рейтинг: '+C.playerFullName(p)+'.');
    for(const part of ['surname','givenName','sourceId'])if(p[part]!==undefined&&(typeof p[part]!=='string'||p[part].length>200))fail('Неверные данные игрока.');
   }
  }

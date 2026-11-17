@@ -36,11 +36,18 @@ function seed(mode='live',now=Date.now()){
  return state;
 }
 function normalizeName(value){return String(value).trim().replace(/\s+/g,' ').toLocaleLowerCase('ru-RU').replace(/ё/g,'е');}
-function playerParts(player){const parts=player.name.trim().split(/\s+/);return {surname:player.surname||parts.at(-1),givenName:player.givenName||parts[0]};}
+function playerParts(player){
+ // Legacy saves keep name as given name + surname. Explicit parts take
+ // precedence; changing presentation must not rewrite player identities.
+ const parts=(player?.name||'').trim().split(/\s+/);
+ return {surname:player?.surname||parts.at(-1)||'',givenName:player?.givenName||parts.slice(0,-1).join(' ')};
+}
+function playerFullName(player){const {surname,givenName}=playerParts(player);return [surname,givenName].filter(Boolean).join(' ');}
 function playerLabel(state,player){
  const {surname,givenName}=playerParts(player);
- const namesakes=new Set(state.entries.flatMap(e=>e.players).filter(p=>normalizeName(playerParts(p).surname)===normalizeName(surname)).map(p=>normalizeName(p.name)));
- return (surname+(namesakes.size>1?' '+givenName[0]:'')).toLocaleUpperCase('ru-RU');
+ const own=normalizeName(givenName),others=state.entries.flatMap(e=>e.players).map(playerParts).filter(p=>normalizeName(p.surname)===normalizeName(surname)&&normalizeName(p.givenName)!==own).map(p=>normalizeName(p.givenName));
+ let length=1;while(length<givenName.length&&others.some(name=>name.slice(0,length)===own.slice(0,length)))length++;
+ return (surname+(others.length?' '+givenName.slice(0,length):'')).toLocaleUpperCase('ru-RU');
 }
 function entryLabel(state,id){return state.entries.find(e=>e.id===id)?.players.map(p=>playerLabel(state,p)).join(' / ')||'—';}
 function entryPlayers(state,id){return state.entries.find(e=>e.id===id)?.players.map(p=>normalizeName(p.name))||[];}
@@ -191,6 +198,6 @@ function standings(state,category){
  }
  return rankStandings(rows,done,swiss);
 }
-const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,restMinutes,queue,queueItems,matchAvailability,entryActivity,entryProgress,courtTiming,restTiming,nextForEntry,normalizeName,playerParts,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings,rankStandings};
+const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,restMinutes,queue,queueItems,matchAvailability,entryActivity,entryProgress,courtTiming,restTiming,nextForEntry,normalizeName,playerParts,playerFullName,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings,rankStandings};
 root.SwissCourtCore=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

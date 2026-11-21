@@ -12,7 +12,7 @@ const T=require('../app/tournament.js'),D=require('../app/storage.js'),A=require
 const script=['app.js','planner-ui.js','display-ui.js','roster-ui.js','real-ui.js'].map(file=>fs.readFileSync(path.join(__dirname,'../app',file),'utf8')).join('\n');
 
 function boot({hash='',search='',savedState,legacyState,simulationControl,realState,lock=true,workerClass}={}){
- const nodes=new Map(),listeners=new Map(),intervals=[],downloads=[];
+ const nodes=new Map(),listeners=new Map(),intervals=[],downloads=[],opened=[];
  let focused='';
  const node=id=>{
   if(!nodes.has(id)){
@@ -41,10 +41,10 @@ function boot({hash='',search='',savedState,legacyState,simulationControl,realSt
   location:{hash,search,href:'http://localhost/#'+hash},history:{replaceState(){}},
   localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},
   document:{querySelector:node,querySelectorAll:()=>[],getElementById:id=>node('#'+id),createElement(){return {click(){}};},addEventListener(type,fn){const list=listeners.get(type)||[];list.push(fn);listeners.set(type,list);}},
-  window:{addEventListener(){},scrollTo(){}},setInterval(fn,ms){intervals.push({fn,ms});},setTimeout(){},clearTimeout(){}
+  window:{addEventListener(){},scrollTo(){},open(url){opened.push(url);}},setInterval(fn,ms){intervals.push({fn,ms});},setTimeout(){},clearTimeout(){}
  });
  vm.runInContext(script,context);
- return {run:code=>vm.runInContext(code,context),html:()=>node('#app').innerHTML,node,storage,intervals,downloads,
+ return {run:code=>vm.runInContext(code,context),html:()=>node('#app').innerHTML,node,storage,intervals,downloads,opened,
   focused:()=>focused,
   input(id,value){const target=node(id);target.value=String(value);for(const fn of listeners.get('input')||[])fn({target});},
   change(dataset,value){const target={dataset,value,classList:{contains:()=>false}};for(const fn of listeners.get('change')||[])fn({target});},

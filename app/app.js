@@ -207,7 +207,8 @@ function topbar(){
  const [status,label]=tournamentStatus();
  const canEdit=mode==='real'&&editorReady&&!storageError;
  const action=canEdit&&!state.started?'<button class="btn primary" data-action="draw">Запустить турнир</button>':
-  canEdit&&!state.closed&&state.categories.every(c=>T.roundStatus(state,c.id).complete)?'<button class="btn primary" data-action="close-day">Зафиксировать результаты</button>':'';
+  canEdit&&!state.closed&&state.categories.every(c=>T.roundStatus(state,c.id).complete)?'<button class="btn primary" data-action="close-day">Зафиксировать результаты</button>':
+  canEdit&&state.closed&&view!=='standings'?'<button class="btn primary" data-action="send-league-results">Передать в Лигу 8Я</button>':'';
  return '<header class="topbar"><a class="brand" href="'+(mode==='real'?'#tournament':'#dashboard')+'"><span class="brand-mark">'+icon('court')+
   '</span><strong>SwissCourt</strong><span class="demo-label">v'+appVersion+'</span></a><div class="day-context"><strong>'+esc(state.settings.title)+
   '</strong><span>'+dateLabel()+' · '+esc(state.settings.venue)+'</span></div><div class="top-actions">'+

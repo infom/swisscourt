@@ -68,6 +68,14 @@ test('organizer prepares, clears and swaps seats before launching the saved draw
  ui.click({action:'confirm-close-day'});
  assert.match(ui.html(),/Турнир завершён/);
  assert.deepEqual(links(),activeLinks);
+ ui.run('view="standings";render()');
+ assert.match(ui.html(),/Передать в Лигу 8Я/);
+ ui.click({action:'send-league-results'});
+ const transfer=new URL(ui.opened[0]);
+ assert.equal(transfer.searchParams.get('section'),'results');
+ const rows=new URLSearchParams(transfer.hash.slice(1)).get('swisscourt').split('\r\n');
+ assert.equal(rows[0],'"Разряд";"Группа";"Игрок 1";"Игрок 2";"Место"');
+ assert.match(rows[1],/^"MD";.*;"1"$/);
 });
 test('new day replacement and backup are explicit; demo remains separate',()=>{
  const s=day(),ui=boot({realState:s});ui.click({action:'new-day'});assert.equal(ui.run('state.entries.length'),8);assert.match(ui.node('#dialog').innerHTML,/Скачать копию/);

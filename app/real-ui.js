@@ -104,6 +104,26 @@ function downloadFile(name,content,type){
  const url=URL.createObjectURL(new Blob([content],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
 function backup(){downloadFile('SwissCourt-'+state.settings.date+'.json',JSON.stringify(state,null,2),'application/json');}
+function sendLeagueResults(){
+ if(mode!=='real'||!state.closed)return;
+ const rows=[['Разряд','Группа','Игрок 1','Игрок 2','Место']];
+ for(const category of state.categories){
+  const code=['MS','WS','MD','WD','XD'].includes(category.code)?category.code:'';
+  const group=category.name.trim().match(/[+\-−]$/)?.[0]||'';
+  for(const result of T.standings(state,category.id)){
+   const [first,second]=result.entry.players;
+   rows.push([code,group,C.playerFullName(first),C.playerFullName(second),result.place??'']);
+  }
+ }
+ const csv=rows.map(row=>row.map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(';')).join('\r\n');
+ const target=new URL('https://d5dvlojr96994pqpp0e9.6brbn2wz.apigw.yandexcloud.net/');
+ const levelLabels={ПРОСПОРТ:'prosport',СТАРТ:'start'};
+ const label=state.settings.level.trim().toLocaleUpperCase('ru');
+ const level=Object.hasOwn(levelLabels,label)?levelLabels[label]:null;
+ target.search=new URLSearchParams({view:'admin',section:'results',date:state.settings.date,...(level?{level}:{})});
+ target.hash=new URLSearchParams({swisscourt:csv});
+ window.open(target.href,'_blank','noopener,noreferrer');
+}
 function importTargets(code){
  return state.categories.filter(c=>c.code===code||c.code==='S'&&['MS','WS'].includes(code)||c.code==='D'&&['MD','WD','XD'].includes(code));
 }
@@ -140,6 +160,7 @@ document.addEventListener('click',event=>{
  case 'offer-redraw':offerRedraw(id);break;
  case 'redraw':if(mutate(s=>T.redraw(s,id),'Тур пересчитан.'))$('#dialog').close();break;
  case 'backup':backup();break;
+ case 'send-league-results':sendLeagueResults();break;
  case 'new-day':dialog('Создать новый день?','Текущий день будет заменён','<p>Сначала сохраните резервную копию или CSV результатов. Демонстрационные сценарии хранятся отдельно.</p>','<button class="btn" data-action="backup">Скачать копию</button>'+cancel+'<button class="btn primary" data-action="confirm-new-day">Создать новый день</button>');break;
  case 'confirm-new-day':if(persist(T.newDay())){$('#dialog').close();view='tournament';filter='all';query='';lookupQuery='';rosterCategory='';rosterSelected.clear();location.hash='tournament';render();}break;
  case 'close-day':{

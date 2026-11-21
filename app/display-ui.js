@@ -227,7 +227,8 @@ function divisionContent(id,isBoard){
 function standings(){
  const id=selectedCategory,scheme=T.schemeOf(state,id);
  return heading('Турнирные таблицы','Положение и показатели по завершённым встречам.',
- '<button class="btn" data-action="export">'+icon('download')+'CSV · '+esc(cat(id).code)+'</button>')+
+ '<button class="btn" data-action="export">'+icon('download')+'CSV · '+esc(cat(id).code)+'</button>'+
+ (mode==='real'&&state.closed?'<button class="btn primary" data-action="send-league-results">Передать в Лигу 8Я</button>':''))+
  '<div class="tabs">'+categoryFilters(id,'category',false)+'</div><section class="panel"><div class="panel-heading">'+badge(id)+
  '<strong>'+esc(stageSummary(id))+'</strong>'+
  (state.started&&T.isBracket(state,id)?'<button class="btn small" data-action="full-bracket" data-id="'+id+'">Полная сетка</button>':'')+

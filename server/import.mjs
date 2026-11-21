@@ -13,14 +13,17 @@ export function sourceLink(value){
  throw Error('Нужна ссылка на турнир или список участников разряда BadminTune.');
 }
 async function html(path,fetcher){
- const response=await fetcher(origin+path,{redirect:'manual',headers:{Accept:'text/html'},signal:AbortSignal.timeout(12000),cache:'no-store'});
+ return parse(await readSource(origin+path,'text/html',2*1024*1024,fetcher));
+}
+export async function readSource(url,type,limit,fetcher){
+ const response=await fetcher(url,{redirect:'manual',headers:{Accept:type},signal:AbortSignal.timeout(12000),cache:'no-store'});
  if(!response.ok||response.status>=300)throw Error('Источник недоступен или изменил адрес. Попробуйте позже.');
- if(!response.headers.get('content-type')?.includes('text/html'))throw Error('Источник вернул неизвестный формат.');
+ if(!response.body||!response.headers.get('content-type')?.includes(type))throw Error('Источник вернул неизвестный формат.');
  const reader=response.body.getReader();let length=0;const chunks=[];
- try{while(true){const {done,value}=await reader.read();if(done)break;length+=value.byteLength;if(length>2*1024*1024)throw Error('Список источника слишком большой. Выберите конкретный разряд.');chunks.push(value);}}
+ try{while(true){const {done,value}=await reader.read();if(done)break;length+=value.byteLength;if(length>limit)throw Error('Список источника слишком большой. Выберите конкретный разряд.');chunks.push(value);}}
  catch(error){await reader.cancel();throw error;}
  const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
- return parse(new TextDecoder().decode(bytes));
+ return new TextDecoder().decode(bytes);
 }
 export function parseCategories(doc,tournamentId){
  const categories=doc.querySelectorAll('[data-subset="categories"] .category-card').flatMap(card=>{

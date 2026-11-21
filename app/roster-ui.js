@@ -59,7 +59,8 @@ function roster(){
   '<div class="roster-workspace"><section class="panel roster-list"><div class="roster-toolbar">'+(editable?
    '<button class="btn primary" data-action="edit-entry">'+icon('plus')+'Добавить</button>'+
    '<button class="btn" id="delete-roster" data-action="delete-roster" '+(!selectedRosterEntries(id).length?'disabled':'')+'>Удалить</button>'+
-   '<button class="btn" data-action="import">'+icon('link')+'Импорт из Бадминтюна</button>':'')+
+   '<button class="btn" data-action="import-league">'+icon('link')+'Из Лиги 8Я</button>'+
+   '<button class="btn" data-action="import">'+icon('link')+'Из Бадминтюна</button>':'')+
    '<label class="search">'+icon('search')+'<input class="form-control" id="participant-search" type="search" placeholder="Фамилия или имя" aria-label="Поиск участников" value="'+esc(query)+'"></label>'+
    '<span class="muted">Показано: '+visible.length+'</span></div>'+
    '<div class="table-wrap"><table><thead><tr>'+(editable?'<th aria-label="Выбор строки"></th>':'')+

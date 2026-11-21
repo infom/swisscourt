@@ -124,30 +124,107 @@ function sendLeagueResults(){
  target.hash=new URLSearchParams({swisscourt:csv});
  window.open(target.href,'_blank','noopener,noreferrer');
 }
-function importTargets(code){
- return state.categories.filter(c=>c.code===code||c.code==='S'&&['MS','WS'].includes(code)||c.code==='D'&&['MD','WD','XD'].includes(code));
+function importTargets(data){
+ const {code,selection}=data;
+ return state.categories.filter(c=>c.code===code||!selection&&(c.code==='S'&&['MS','WS'].includes(code)||c.code==='D'&&['MD','WD','XD'].includes(code)));
 }
 function importDialog(){
  if(state.started){toast('Импорт доступен до начала турнира.');return;}
- importPreview=null;
+ importPreview=null;importRequest++;
  dialog('Импорт из Бадминтюна','Сначала предпросмотр, затем добавление','<div class="field"><label for="import-url">Ссылка на турнир или разряд</label><input class="form-control" id="import-url" type="url" placeholder="https://msk.volan.web-us.ru/tournament/…"></div><p>Импортируются основные заявки выбранного разряда. Резерв и неполные пары пропускаются.</p><div id="import-status" role="status"></div>',cancel+'<button class="btn primary" data-action="fetch-import">Загрузить</button>');
 }
-async function fetchImport(url){
+function leagueImportDialog(){
+ if(mode!=='real'||state.started||!editorReady)return;
+ importPreview=null;
+ dialog('Импорт из Клубной лиги 8Я','','<div id="import-status" role="status"></div>',cancel+'<button class="btn" data-action="fetch-league-catalog">Обновить</button>');
+ return fetchImport({source:'league'});
+}
+function showLeagueCatalog(tours){
+ const active=activeRosterCategory();
+ const selected=state.entries.find(entry=>entry.category===active.id&&entry.leagueSource)?.leagueSource||
+  tours.find(tour=>tour.date===state.settings.date)?.categories.find(item=>item.levelLabel===state.settings.level&&item.code===active.code)?.selection;
+ dialog('Импорт из Клубной лиги 8Я','','<div class="field"><label for="league-selection">Тур, уровень и разряд</label>'+
+  '<select class="form-control" id="league-selection">'+tours.map(tour=>'<optgroup label="'+esc('Тур '+tour.number+' · '+tour.date.split('-').reverse().join('.'))+'">'+
+  tour.categories.map(item=>'<option value="'+esc(item.selection)+'" '+(selected===item.selection?'selected':'')+'>'+esc(item.levelLabel+' · '+item.name+' ('+item.code+')')+'</option>').join('')+
+  '</optgroup>').join('')+'</select></div><p>Загружаются подтверждённые заявки основного списка.</p><div id="import-status" role="status"></div>',
+  cancel+'<button class="btn primary" data-action="fetch-league-roster">Показать заявки</button>');
+}
+async function fetchImport(payload){
  const requestId=++importRequest;
  const status=$('#import-status');status.textContent='Загрузка…';
  try{
-  const response=await fetch('./api/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url}),cache:'no-store',signal:AbortSignal.timeout(20000)});
+  const response=await fetch('./api/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),cache:'no-store',signal:AbortSignal.timeout(20000)});
   const data=await response.json();if(!response.ok)throw Error(data.error||'Источник недоступен.');
   if(!$('#dialog').open||!$('#import-status')||requestId!==importRequest)return;
+  if(payload.source==='league'&&data.tours){showLeagueCatalog(data.tours);return;}
   if(data.categories){
    dialog('Выберите разряд BadminTune',data.name||'Турнир',data.categories.map(c=>'<button class="btn import-category" data-action="fetch-category" data-url="'+esc(c.url)+'">'+esc(c.name)+'</button>').join('')+'<div id="import-status" role="status"></div>',cancel);return;
   }
   importPreview=data;
-  const targets=importTargets(data.code),preferred=mode==='real'?activeRosterCategory().id:null;
-  dialog('Проверьте импорт',data.name+' · '+data.entries.length+' участников / пар',
-   '<div class="field"><label for="import-target">Добавить в разряд</label><select id="import-target" class="form-control">'+targets.map(c=>'<option value="'+c.id+'" '+(preferred===c.id?'selected':'')+'>'+esc(c.code+' · '+c.name)+'</option>').join('')+'</select></div>'+(!targets.length?'<p class="notice warn">Сначала добавьте разряд '+esc(data.code)+' в настройках.</p>':'')+
-   (data.warnings||[]).map(w=>'<p class="notice warn">'+esc(w)+'</p>').join('')+'<div class="import-list">'+data.entries.map(e=>'<p>'+e.players.map(p=>esc(C.playerFullName(p))+' · '+(p.rating===null?'рейтинг не указан':p.rating)).join(' / ')+'</p>').join('')+'</div><p>Состав и рейтинги можно отредактировать после импорта.</p>',cancel+'<button class="btn primary" data-action="confirm-import" '+(!data.entries.length||!targets.length?'disabled':'')+'>Добавить в состав</button>');
+  showImportPreview(data);
  }catch(error){if($('#dialog').open&&$('#import-status')&&requestId===importRequest)$('#import-status').textContent='Не удалось импортировать: '+error.message+' Состав не изменён.';}
+}
+function showImportPreview(data){
+ const fromLeague=Boolean(data.selection),previous=state.entries.find(entry=>entry.leagueSource===data.selection&&fromLeague);
+ const targets=importTargets(data),preferred=previous?.category||(mode==='real'?activeRosterCategory().id:null);
+ const addCategory=fromLeague&&!targets.length&&state.categories.length<5;
+ const label=previous?'Обновить состав':'Добавить в состав';
+ const subtitle=[data.name,data.levelLabel,data.date?.split('-').reverse().join('.'),data.entries.length+' заявок'].filter(Boolean).join(' · ');
+ dialog('Проверьте импорт',esc(subtitle),
+  '<div class="field"><label for="import-target">Категория SwissCourt</label><select id="import-target" class="form-control">'+
+  targets.map(c=>'<option value="'+c.id+'" '+(preferred===c.id?'selected':'')+'>'+esc(c.code+' · '+c.name)+'</option>').join('')+
+  (addCategory?'<option value="new">Создать категорию '+esc(data.code)+'</option>':'')+'</select></div>'+
+  (!targets.length&&!addCategory?'<p class="notice warn">Сначала добавьте разряд '+esc(data.code)+' в настройках.</p>':'')+
+  (data.warnings||[]).map(w=>'<p class="notice warn">'+esc(w)+'</p>').join('')+
+  '<div class="import-list">'+data.entries.map(e=>'<p>'+e.players.map(p=>esc(C.playerFullName(p))+' · '+(p.rating===null?'рейтинг не указан':p.rating)).join(' / ')+'</p>').join('')+'</div>'+
+  (fromLeague?'<p>В игровой день будут подставлены дата, зал и уровень из лиги.</p>':'')+
+  (previous?'<p>Обновятся ранее загруженные заявки этого разряда. Если заявку сняли или перенесли в резерв, она уйдёт из состава.</p>':''),
+  cancel+'<button class="btn primary" data-action="confirm-import" '+((!data.entries.length&&!previous||!targets.length&&!addCategory)?'disabled':'')+'>'+label+'</button>');
+}
+
+function updateLeagueRoster(day,data,category){
+ const source=data.selection;
+ const eventKey=value=>value.slice(0,value.lastIndexOf('/'));
+ if(day.entries.some(entry=>entry.leagueSource&&eventKey(entry.leagueSource)!==eventKey(source))){
+  throw Error('В этот игровой день уже загружены заявки другого тура или уровня лиги.');
+ }
+ const nameKey=player=>C.normalizeName(C.playerFullName(player).normalize());
+ const lineup=entry=>JSON.stringify(entry.players.map(nameKey).sort());
+ const previous=day.entries.filter(entry=>entry.leagueSource===source);
+ const oldRows=new Map(previous.map(entry=>[lineup(entry),entry]));
+ const oldRatings=new Map(previous.flatMap(entry=>entry.players.map(player=>[nameKey(player),player.rating])));
+ const manual=new Set(day.entries.filter(entry=>!entry.leagueSource&&entry.category===category).map(lineup));
+ const imported=data.entries.filter(entry=>!manual.has(lineup(entry))).map(entry=>({
+  id:oldRows.get(lineup(entry))?.id??crypto.randomUUID(),category,leagueSource:source,
+  players:entry.players.map(player=>({...player,rating:player.rating??oldRatings.get(nameKey(player))??null}))
+ }));
+ const replacements=new Map(imported.map(entry=>[entry.id,entry]));
+ const oldIds=new Set(previous.map(entry=>entry.id));
+ day.entries=day.entries.flatMap(entry=>{
+  if(!oldIds.has(entry.id))return [entry];
+  const updated=replacements.get(entry.id);
+  return updated?[updated]:[];
+ });
+ day.entries.push(...imported.filter(entry=>!oldIds.has(entry.id)));
+ Object.assign(day.settings,{date:data.date,venue:data.venue,level:data.levelLabel});
+}
+
+function confirmRosterImport(){
+ const data=importPreview;
+ if(!data)return;
+ let category=$('#import-target').value;
+ const saved=mutate(day=>{
+  if(day.started)throw Error('Турнир уже начался.');
+  if(data.selection&&category==='new'&&day.categories.length<5){
+   const division=T.divisions.find(item=>item.code===data.code);
+   category=crypto.randomUUID();
+   day.categories.push({...division,id:category,division:division.id});
+  }else if(!importTargets(data).some(item=>item.id===category))throw Error('Выберите подходящую категорию.');
+  if(data.selection)updateLeagueRoster(day,data,category);
+  else day.entries.push(...data.entries.map(entry=>({id:crypto.randomUUID(),category,players:entry.players})));
+ },'Состав сохранён.');
+ if(saved){$('#dialog').close();view='participants';rosterCategory=category;rosterSelected.clear();swapSelection=null;query='';
+  location.hash='participants';render();importPreview=null;}
 }
 document.addEventListener('click',event=>{
  const target=event.target.closest('[data-action]');if(!target)return;
@@ -172,9 +249,12 @@ document.addEventListener('click',event=>{
  case 'reopen-day':if(persist({...state,closed:false}))render();break;
  case 'recover':if(editorReady&&recoveryState){try{state=D.recover(localStorage,recoveryState);storageError='';recoveryState=null;render();toast('Предыдущая запись восстановлена.');}catch(error){toast(error.message);}}break;
  case 'restore-backup':if(backupPreview){try{if(!editorReady)throw Error('Откройте вкладку организатора.');if(storageError)state=D.recover(localStorage,backupPreview);else if(!persist(backupPreview))break;storageError='';recoveryState=null;backupPreview=null;$('#dialog').close();render();toast('День восстановлен.');}catch(error){toast(error.message);}}break;
- case 'fetch-import':fetchImport($('#import-url').value.trim());break;
- case 'fetch-category':fetchImport(target.dataset.url);break;
- case 'confirm-import':if(importPreview){const category=$('#import-target').value;if(mutate(s=>{if(s.started)throw Error('Турнир уже начался.');if(!importTargets(importPreview.code).some(c=>c.id===category))throw Error('Выберите подходящую категорию.');const imported=importPreview.entries.map(e=>({id:crypto.randomUUID(),category,players:e.players}));s.entries.push(...imported);},'Участники добавлены. Проверьте рейтинги перед первым туром.')){$('#dialog').close();view='participants';rosterCategory=category;location.hash='participants';render();importPreview=null;}}break;
+ case 'import-league':
+ case 'fetch-league-catalog':leagueImportDialog();break;
+ case 'fetch-league-roster':fetchImport({source:'league',selection:$('#league-selection').value});break;
+ case 'fetch-import':fetchImport({url:$('#import-url').value.trim()});break;
+ case 'fetch-category':fetchImport({url:target.dataset.url});break;
+ case 'confirm-import':confirmRosterImport();break;
  }
 });
 document.addEventListener('change',async event=>{

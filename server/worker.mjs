@@ -1,4 +1,5 @@
 import {importSource} from './import.mjs';
+import {importLeague} from './league.mjs';
 import assets from '../dist/assets.generated.mjs';
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Pragma':'no-cache','X-Content-Type-Options':'nosniff'}});
 export default {async fetch(request){
@@ -9,7 +10,9 @@ export default {async fetch(request){
   try{
    if(Number(request.headers.get('content-length'))>4096)return json({error:'Слишком длинная ссылка.'},413);
    const text=await request.text();if(text.length>4096)return json({error:'Слишком длинная ссылка.'},413);
-   const data=JSON.parse(text);if(typeof data.url!=='string')throw Error('Укажите ссылку.');
+   const data=JSON.parse(text);
+   if(data?.source==='league')return json(await importLeague(data.selection));
+   if(typeof data?.url!=='string')throw Error('Укажите ссылку.');
    return json(await importSource(data.url));
   }catch(error){return json({error:error.name==='TimeoutError'?'Источник не ответил вовремя. Попробуйте позже.':error.message},400);}
  }

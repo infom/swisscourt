@@ -83,6 +83,45 @@ test('new day replacement and backup are explicit; demo remains separate',()=>{
  ui.click({action:'confirm-new-day'});assert.equal(ui.run('state.entries.length'),0);assert.notEqual(ui.run('state.id'),s.id);
  const demo=boot({search:'?scenario=live',realState:s});assert.equal(demo.run('state.entries.length'),24);assert.deepEqual(JSON.parse(demo.storage.get(D.key)),s);
 });
+test('league roster preview and refresh preserve manual entries, remove withdrawn imports and retain missing local ratings',async()=>{
+ const s=day(1);
+ const item={selection:'1/start/MD',date:'2026-12-02',venue:'КСШ',levelLabel:'СТАРТ',code:'MD',name:'Мужская пара'};
+ const pair=(surname,rating=1200)=>({players:['Алексей','Иван'].map(givenName=>({name:givenName+' '+surname,surname,givenName,rating}))});
+ let entries=[pair('Основной'),pair('Бывший')];
+ const ui=boot({realState:s,hash:'#participants',fetcher:async(path,options)=>{
+  assert.equal(path,'./api/import');
+  const payload=JSON.parse(options.body);
+  return Response.json(payload.selection?{...item,entries,warnings:['В резерве: 1.']}:
+   {tours:[{number:1,date:item.date,categories:[item]}]});
+ }});
+ assert.match(ui.html(),/Из Лиги 8Я/);
+ await ui.run('leagueImportDialog()');
+ assert.match(ui.node('#dialog').innerHTML,/СТАРТ · Мужская пара/);
+ const preview=async()=>{
+  await ui.run('fetchImport({source:"league",selection:"1/start/MD"})');
+  assert.match(ui.node('#dialog').innerHTML,/В резерве: 1/);
+  ui.node('#import-target').value='md';
+ };
+ await preview();
+ assert.equal(D.decode(ui.storage.get(D.key)).entries.length,1);
+ ui.click({action:'confirm-import'});
+ const initial=D.decode(ui.storage.get(D.key));
+ assert.equal(initial.settings.date,item.date);
+ assert.equal(initial.settings.level,'СТАРТ');
+ assert.equal(initial.entries.length,3);
+ const imported=initial.entries[1];
+ assert.equal(imported.leagueSource,item.selection);
+ ui.run('mutate(day=>{day.entries[1].players[0].rating=1500;})');
+ entries=[pair('Основной',null),pair('Новый')];
+ await ui.run('leagueImportDialog()');await preview();
+ ui.click({action:'confirm-import'});
+ const refreshed=D.decode(ui.storage.get(D.key));
+ assert.deepEqual(refreshed.entries[0],s.entries[0]);
+ assert.equal(refreshed.entries.length,3);
+ assert.equal(refreshed.entries[1].id,imported.id);
+ assert.equal(refreshed.entries[1].players[0].rating,1500);
+ assert.equal(refreshed.entries[2].players[0].surname,'Новый');
+});
 test('CSV treats imported spreadsheet formulas as literal player names',async()=>{
  const s=day();s.entries[0].players[0].name='Иван =HYPERLINK(1)';const ui=boot({realState:s});ui.click({action:'export'});
  assert.match(await ui.downloads[0].text(),/"'=HYPERLINK\(1\) Иван"/);

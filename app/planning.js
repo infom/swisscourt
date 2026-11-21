@@ -4,7 +4,6 @@ const C=root.SwissCourtCore||(typeof require==='function'?require('./core.js'):n
 const B=root.SwissCourtBrackets||(typeof require==='function'?require('./brackets.js'):null);
 const T=root.SwissCourtTournament||(typeof require==='function'?require('./tournament.js'):null);
 const minute=60000;
-const rest=15;
 
 function realStart(state,now){
  if(Number.isFinite(state.startedAt))return state.startedAt;
@@ -70,6 +69,7 @@ function tasksFor(state,cat,n){
 
 function estimate(state,{actual=false,now=Date.now()}={}){
  const budget=T.rentalDuration(state.settings);
+ const rest=C.restInterval(state.settings);
  const live=actual&&state.started;
  const origin=live?realStart(state,now):now;
  const current=live?Math.max(0,(now-origin)/minute):0;
@@ -146,6 +146,6 @@ function estimate(state,{actual=false,now=Date.now()}={}){
   duration:finish,court:categories.reduce((sum,c)=>sum+c.court,0),budget,
   elapsed,remaining:elapsed===null?null:Math.max(0,finish-elapsed),reserve:budget-finish};
 }
-const api={estimate,rest};
+const api={estimate};
 root.SwissCourtPlanning=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

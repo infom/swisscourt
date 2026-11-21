@@ -32,7 +32,7 @@ function rentalDuration(settings){
 function newDay(now=new Date()){
  const local=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
  return {version:1,kind:'tournament',id:id(),revision:0,started:false,closed:false,
-  settings:{title:'Клубный турнир',venue:'Юг-Арена',date:local,rentalMinutes:180,courts:7,level:'Любительский',prepareCount:4},
+  settings:{title:'Клубный турнир',venue:'Юг-Арена',date:local,rentalMinutes:180,courts:7,restMinutes:C.restInterval(),level:'Любительский',prepareCount:4},
   categories:structuredClone(divisions.filter(c=>['md','wd'].includes(c.id))),entries:[],matches:[],byes:[],history:[]};
 }
 function validate(state,{ready=false}={}){
@@ -43,6 +43,7 @@ function validate(state,{ready=false}={}){
  if(!Number.isFinite(Date.parse(s.date+'T12:00:00Z'))||new Date(s.date+'T12:00:00Z').toISOString().slice(0,10)!==s.date)fail('Неверная дата турнира.');
  const rental=rentalDuration(s);
  if(!Number.isSafeInteger(rental)||rental<=0)fail('Укажите длительность аренды в формате ч:мм, например 2:30.');
+ if(!C.validRestInterval(C.restInterval(s)))fail('Укажите отдых целым числом минут от нуля.');
  for(const name of ['title','venue','level'])if(typeof s[name]!=='string'||!s[name].trim()||s[name].length>100)fail('Заполните название, зал и дивизион.');
  if(!Array.isArray(state.categories)||state.categories.length<1||state.categories.length>5||new Set(state.categories.map(c=>c.id)).size!==state.categories.length)fail('Выберите от одной до пяти категорий.');
  for(const cat of state.categories){

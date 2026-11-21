@@ -122,6 +122,12 @@ test('forecast uses common courts, rest and rental duration for parallel categor
  assert.equal(double.duration,20);assert.equal(double.reserve,10);
  const circle=field(4,'circle');circle.settings.courts=2;
  assert.equal(P.estimate(circle).duration,90);
+ delete circle.settings.restMinutes;
+ assert.equal(P.estimate(T.validate(circle)).duration,90);
+ circle.settings.restMinutes=10;
+ assert.equal(P.estimate(circle).duration,80);
+ circle.settings.restMinutes=0;
+ assert.equal(P.estimate(circle).duration,60);
 });
 test('live forecast uses the actual launch and legacy first calls instead of the calendar date',()=>{
  const state=field(2,'circle');
@@ -163,6 +169,39 @@ test('planner accepts a rental duration and starts the clock only when the draw 
  ui.click({action:'publish-draw'});
  assert.equal(D.decode(ui.storage.get(D.key)).startedAt,1800000000000);
  assert.match(ui.html(),/Прошло 0:00/);
+});
+test('planner saves zero rest, recalculates the forecast and skips short-rest warnings',()=>{
+ const state=field(4,'circle');
+ state.settings.courts=2;
+ const ui=boot({realState:state,hash:'#plan'});
+ const input=ui.node('#plan-rest-minutes');input.dataset={planSetting:'restMinutes'};
+ assert.match(ui.html(),/Отдых между играми/);
+ assert.match(ui.html(),/1:30/);
+ for(const invalid of ['','-1','2.5']){
+  ui.input('#plan-rest-minutes',invalid);
+  assert.match(ui.node('#plan-overview').innerHTML,/Укажите отдых целым числом/);
+  ui.click({action:'save-plan'});
+  assert.equal(D.decode(ui.storage.get(D.key)).settings.restMinutes,15);
+ }
+ ui.input('#plan-rest-minutes','0');
+ assert.match(ui.node('#plan-overview').innerHTML,/1:00/);
+ ui.click({action:'save-plan'});
+ const saved=D.decode(ui.storage.get(D.key));
+ assert.equal(saved.settings.restMinutes,0);
+ const launch=1800000000000;
+ T.start(saved,launch);
+ const firstRound=saved.matches.filter(match=>match.round===1);
+ for(const [index,match] of firstRound.entries())C.assign(saved,match.id,index+1,launch);
+ for(const match of firstRound)T.finish(saved,match.id,win,launch+20*60000);
+ const live=boot({realState:saved,hash:'#dashboard'});
+ live.run('gameNow=()=>1800001200000;render()');
+ const candidate=live.run('C.queue(state,gameNow()).find(match=>C.restMinutes(state,match,gameNow())===0)?.id');
+ assert.ok(candidate);
+ live.run('assignDialog('+JSON.stringify(candidate)+')');
+ assert.doesNotMatch(live.node('#dialog').innerHTML,/Рекомендуемый отдых|activity-(critical|short)/);
+ live.run('state.settings.restMinutes=10;assignDialog('+JSON.stringify(candidate)+')');
+ assert.match(live.node('#dialog').innerHTML,/Рекомендуемый отдых · 10 мин/);
+ assert.match(live.node('#dialog').innerHTML,/activity-critical/);
 });
 test('requested court is assigned directly and score entry keeps manual values and a deciding game',()=>{
  const state=field(2,'circle');T.start(state);

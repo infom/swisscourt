@@ -155,7 +155,7 @@ function activityLine(id,showRestLabel=false){
  }else if(activity.restMinutes===null){
   status='unplayed';value='—';label='Ещё не играли';
  }else{
-  value=activity.restMinutes;status=C.restTiming(value);
+  value=activity.restMinutes;status=C.restTiming(value,C.restInterval(state.settings));
   const descriptions={critical:'Очень мало отдыха',short:'Меньше рекомендованного отдыха',normal:'Нормальный отдых',long:'Долгое ожидание',overdue:'Слишком долгое ожидание'};
   label=descriptions[status]+' · '+value+' мин · последняя игра завершилась в '+time(activity.lastEndedAt);
  }
@@ -248,7 +248,9 @@ function dashboard(){
  if(state.closed)return heading('Очередь вызова','Все встречи сыграны. Результаты зафиксированы.')+summary();
  const all=C.queueItems(state,gameNow()),list=all.filter(m=>filter==='all'||m.category===filter);
  const ready=list.filter(m=>C.matchAvailability(state,m).available),waiting=list.filter(m=>!C.matchAvailability(state,m).available);
- return (mode==='real'?liveForecast()+roundControls():'')+'<section class="queue-panel" id="queue"><div class="queue-toolbar"><div class="row"><h1>Очередь вызова</h1><span class="count">'+all.length+'</span></div><div class="filter-row">'+categoryFilters(filter,'filter')+'</div><span class="queue-help">Отдых &lt; 15 мин — предупреждение, а не запрет</span></div><div class="queue-group-title"><strong>Можно вызвать <span>'+ready.length+'</span></strong><span>Отдых рядом с парой · подробности при наведении</span></div>'+ready.map((m,i)=>queueRow(m,i)).join('')+(!ready.length?'<div class="empty">Сейчас нет доступных встреч. Причины ожидания указаны ниже.</div>':'')+(waiting.length?'<div class="queue-group-title waiting-title"><strong>Ожидают <span>'+waiting.length+'</span></strong><span>Встречи ждут завершения предыдущих игр своих участников</span></div>'+waiting.map((m,i)=>queueRow(m,i)).join(''):'')+'</section><section class="progress-strip" style="--division-count:'+state.categories.length+'" aria-label="Прогресс турниров">'+state.categories.map(divisionCard).join('')+'</section><div class="queue-bottom">'+summary()+'<span>Порядок рекомендуемый. Вызов — по решению организатора.</span></div>';
+ const interval=C.restInterval(state.settings);
+ const restHelp='<span class="queue-help">'+(interval?'Рекомендуемый отдых · '+interval+' мин':'Отдых по плану · 0 мин')+'</span>';
+ return (mode==='real'?liveForecast()+roundControls():'')+'<section class="queue-panel" id="queue"><div class="queue-toolbar"><div class="row"><h1>Очередь вызова</h1><span class="count">'+all.length+'</span></div><div class="filter-row">'+categoryFilters(filter,'filter')+'</div>'+restHelp+'</div><div class="queue-group-title"><strong>Можно вызвать <span>'+ready.length+'</span></strong><span>Отдых рядом с парой · подробности при наведении</span></div>'+ready.map((m,i)=>queueRow(m,i)).join('')+(!ready.length?'<div class="empty">Сейчас нет доступных встреч. Причины ожидания указаны ниже.</div>':'')+(waiting.length?'<div class="queue-group-title waiting-title"><strong>Ожидают <span>'+waiting.length+'</span></strong><span>Встречи ждут завершения предыдущих игр своих участников</span></div>'+waiting.map((m,i)=>queueRow(m,i)).join(''):'')+'</section><section class="progress-strip" style="--division-count:'+state.categories.length+'" aria-label="Прогресс турниров">'+state.categories.map(divisionCard).join('')+'</section><div class="queue-bottom">'+summary()+'<span>Порядок рекомендуемый. Вызов — по решению организатора.</span></div>';
 }
 
 function preparation(){
@@ -514,8 +516,11 @@ function assignDialog(id){
  if(!m)return;
  if(!C.matchAvailability(state,m).available){toast(blockersText(m).join('. '));return;}
  if(!free.length){toast('Все корты заняты. Сначала внесите результат.');return;}
- assignMatchId=id;const mins=C.restMinutes(state,m,gameNow());
- dialog('Вызвать на корт',cat(m.category).code+' · Тур '+m.round,matchup(m,'assign-match','labeled')+'<div class="court-options">'+free.map((n,i)=>'<label class="court-option"><input type="radio" name="court" value="'+n+'" '+(i===0?'checked':'')+'>Корт <b>'+n+'</b></label>').join('')+'</div>'+(mins!==null&&mins<15?'<div class="notice warn">'+icon('clock')+'Рекомендуется 15 минут отдыха. Вы можете вызвать участников сейчас.</div>':'<p class="dialog-note">Объявите участников и номер корта в микрофон.</p>'),cancel+'<button class="btn primary" data-action="start-match">'+icon('court')+'Назначить и вызвать</button>');
+ assignMatchId=id;
+ const mins=C.restMinutes(state,m,gameNow()),interval=C.restInterval(state.settings);
+ const note=mins!==null&&mins<interval?'<div class="notice warn">'+icon('clock')+'Рекомендуемый отдых · '+interval+' мин. Вы можете вызвать участников сейчас.</div>':
+  '<p class="dialog-note">Объявите участников и номер корта в микрофон.</p>';
+ dialog('Вызвать на корт',cat(m.category).code+' · Тур '+m.round,matchup(m,'assign-match','labeled')+'<div class="court-options">'+free.map((n,i)=>'<label class="court-option"><input type="radio" name="court" value="'+n+'" '+(i===0?'checked':'')+'>Корт <b>'+n+'</b></label>').join('')+'</div>'+note,cancel+'<button class="btn primary" data-action="start-match">'+icon('court')+'Назначить и вызвать</button>');
 }
 
 function editEntryDialog(id){

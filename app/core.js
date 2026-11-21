@@ -61,7 +61,14 @@ function entryActivity(state,id,now=Date.now()){
  return {playing,lastEndedAt:previous?.endedAt??null,restMinutes:previous?Math.max(0,Math.floor((now-previous.endedAt)/60000)):null};
 }
 function courtTiming(minutes){return minutes<2?'called':minutes<20?'normal':minutes<30?'long':'delayed';}
-function restTiming(minutes){return minutes===null?'unplayed':minutes<5?'critical':minutes<15?'short':minutes<60?'normal':minutes<90?'long':'overdue';}
+const defaultRestInterval=15;
+function restInterval({restMinutes=defaultRestInterval}={}){return restMinutes;}
+function validRestInterval(minutes){return Number.isSafeInteger(minutes)&&minutes>=0;}
+function restTiming(minutes,interval=defaultRestInterval){
+ if(minutes===null)return 'unplayed';
+ if(minutes<interval)return minutes<5?'critical':'short';
+ return minutes<60?'normal':minutes<90?'long':'overdue';
+}
 function entryProgress(state,id){
  const games=state.matches.filter(m=>m.status==='done'&&(m.a===id||m.b===id))
   .slice().sort((a,b)=>a.round-b.round||a.endedAt-b.endedAt).flatMap(m=>{
@@ -154,9 +161,10 @@ function restMinutes(state,match,now=Date.now()){
  return previous.length?Math.max(0,Math.floor((now-Math.max(...previous))/60000)):null;
 }
 function queue(state,now=Date.now()){
+ const interval=restInterval(state.settings);
  return state.matches.filter(m=>m.status==='queued'&&matchAvailability(state,m).available).map(match=>{
   const rest=restMinutes(state,match,now);
-  return {match,short:rest!==null&&rest<15?1:0};
+  return {match,short:rest!==null&&rest<interval?1:0};
  }).sort((a,b)=>a.short-b.short||a.match.round-b.match.round).map(row=>row.match);
 }
 function queueItems(state,now=Date.now()){
@@ -248,6 +256,6 @@ function standings(state,category){
  }
  return rankStandings(rows,done,swiss);
 }
-const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,scoreFormats,formatOf,capOf,matchResult,shortScore,restMinutes,queue,queueItems,matchAvailability,entryActivity,entryProgress,courtTiming,restTiming,nextForEntry,normalizeName,playerParts,playerFullName,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings,rankStandings};
+const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,scoreFormats,formatOf,capOf,matchResult,shortScore,restMinutes,restInterval,validRestInterval,queue,queueItems,matchAvailability,entryActivity,entryProgress,courtTiming,restTiming,nextForEntry,normalizeName,playerParts,playerFullName,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings,rankStandings};
 root.SwissCourtCore=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

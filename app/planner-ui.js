@@ -44,11 +44,13 @@ function defaultPlan(category,n){
 function ensurePlanDraft(){
  if(planDraft?.id===state.id&&planDraft.revision===state.revision)return;
  const {start,end,...settings}=state.settings;
- planDraft={id:state.id,revision:state.revision,settings:{...settings,rentalMinutes:T.rentalDuration(state.settings)},
+ planDraft={id:state.id,revision:state.revision,settings:{...settings,rentalMinutes:T.rentalDuration(state.settings),restMinutes:C.restInterval(state.settings)},
   categories:state.started?structuredClone(state.categories):state.categories.map(c=>defaultPlan(c,state.entries.filter(e=>e.category===c.id).length))};
 }
 function peekPlan(){
- return P.estimate({...state,settings:planDraft.settings,categories:planDraft.categories},{actual:state.started,now:gameNow()});
+ const settings={...planDraft.settings};
+ if(!C.validRestInterval(settings.restMinutes))settings.restMinutes=C.restInterval(state.settings);
+ return P.estimate({...state,settings,categories:planDraft.categories},{actual:state.started,now:gameNow()});
 }
 function groupCounts(n){
  return [1,2,3,4].filter(count=>B.groupSizes(n,count).every(size=>size>=2&&size<=4));
@@ -65,13 +67,16 @@ function planPresetOptions(category){
  if(category.planned===12)return [['triple','Три сетки с бронзой']];
  return [];
 }
-const planSettingHint='<div class="plan-state warn">Укажите число кортов и длительность аренды, например 2:30.</div>';
-function planSettingValid(settings){
- return Number.isInteger(settings.courts)&&settings.courts>=1&&settings.courts<=32&&Number.isSafeInteger(settings.rentalMinutes)&&settings.rentalMinutes>0;
+function planSettingError(settings){
+ if(!Number.isInteger(settings.courts)||settings.courts<1||settings.courts>32||!Number.isSafeInteger(settings.rentalMinutes)||settings.rentalMinutes<=0){
+  return 'Укажите число кортов и длительность аренды, например 2:30.';
+ }
+ return C.validRestInterval(settings.restMinutes)?'':'Укажите отдых целым числом минут от нуля.';
 }
 function summaryCells(estimate){
- const stats=estimate.invalid?['—','—','—']:[estimate.count,minutesText(estimate.court),minutesText(estimate.duration)];
- const status=planSettingValid(planDraft.settings)?timingStatus(estimate,state.started):planSettingHint;
+ const error=planSettingError(planDraft.settings);
+ const stats=estimate.invalid||error?['—','—','—']:[estimate.count,minutesText(estimate.court),minutesText(estimate.duration)];
+ const status=error?'<div class="plan-state warn">'+error+'</div>':timingStatus(estimate,state.started);
  return '<div class="plan-summary-state">'+status+'</div>'+stats.map((value,i)=>
   '<div class="plan-stat total"><strong>'+value+'</strong><small>'+['Игр всего','Время на кортах','Время в зале'][i]+'</small></div>').join('');
 }
@@ -153,14 +158,15 @@ function planner(){
  const draft=planDraft,estimate=peekPlan(),readonly=state.closed||!editorReady;
  const setting=(label,key,type,attributes='')=>planField(label,'<input class="form-control" type="'+type+'" data-plan-setting="'+key+'" value="'+esc(draft.settings[key])+'" '+attributes+' '+(readonly||state.started&&key==='courts'?'disabled':'')+'>');
  return heading('Турнир','',plannerActions(readonly))+
-  '<section class="panel plan-card"><h2>Зал и аренда</h2><div class="plan-config">'+setting('Название турнира','title','text','maxlength="100"')+
+  '<section class="panel plan-card"><h2>Общие параметры</h2><div class="plan-config">'+setting('Название турнира','title','text','maxlength="100"')+
   setting('Дата','date','date')+setting('Зал','venue','text','maxlength="100"')+
   planField('Длительность аренды (ч:мм)',rentalInput(draft.settings.rentalMinutes,'id="plan-rental-minutes" data-plan-setting="rentalMinutes" '+(readonly?'disabled':'')))+
-  setting('Кортов','courts','number','min="1" max="32"')+'</div></section>'+
+  setting('Кортов','courts','number','min="1" max="32"')+
+  setting('Отдых между играми (мин)','restMinutes','number','id="plan-rest-minutes" min="0" step="1" required')+'</div></section>'+
   '<section class="panel plan-card plan-table"><div class="plan-table-inner"><div class="plan-grid plan-overview" id="plan-overview">'+summaryCells(estimate)+'</div>'+
   '<div class="plan-grid plan-table-head">'+['Название','Разряд','Участников','Счёт','Схема','Настройки схемы'].map(label=>'<span>'+label+'</span>').join('')+'</div>'+
   draft.categories.map((category,i)=>planRow(category,i,estimate.categories[i])).join('')+'</div></section>'+
-  '<p class="table-note">Прогноз учитывает общие корты и '+P.rest+' минут отдыха между встречами.</p>';
+  '<p class="table-note">Прогноз учитывает общие корты и заданный отдых между играми.</p>';
 }
 function liveForecast(){
  const estimate=P.estimate(state,{actual:true,now:gameNow()});
@@ -179,7 +185,10 @@ function updatePlanField(target,commit){
  const {planSetting,plan:field,index}=target.dataset||{};
  if(planSetting){
   if(state.started&&planSetting==='courts')return;
-  planDraft.settings[planSetting]=planSetting==='rentalMinutes'?T.parseRentalDuration(target.value):planSetting==='courts'?Number(target.value):target.value;
+  let value=target.value;
+  if(planSetting==='rentalMinutes')value=T.parseRentalDuration(value);
+  if(planSetting==='courts'||planSetting==='restMinutes')value=value.trim()===''?NaN:Number(value);
+  planDraft.settings[planSetting]=value;
   updatePlanMetrics();
   return;
  }
@@ -230,7 +239,8 @@ document.addEventListener('click',event=>{
  if(!target||boardMode||mode!=='real'||state.closed||view!=='tournament'||!planDraft||!editorReady)return;
  const {action,index}=target.dataset;
  if(action==='save-plan'){
-  if(!planSettingValid(planDraft.settings)){toast('Укажите количество кортов и длительность аренды, например 2:30.');return;}
+  const error=planSettingError(planDraft.settings);
+  if(error){toast(error);return;}
   try{
    const next=structuredClone(planDraft);
    if(!state.started)for(const category of next.categories){

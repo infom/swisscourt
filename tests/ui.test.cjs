@@ -122,6 +122,21 @@ test('league roster preview and refresh preserve manual entries, remove withdraw
  assert.equal(refreshed.entries[1].players[0].rating,1500);
  assert.equal(refreshed.entries[2].players[0].surname,'Новый');
 });
+test('league import can reuse an explicitly selected empty category without adding one',()=>{
+ const s=day(0),ui=boot({realState:s,hash:'#participants'});
+ ui.run(`importPreview={selection:'1/start/XD',date:'2026-11-25',venue:'КСШ',levelLabel:'СТАРТ',code:'XD',name:'Микст',
+  entries:[{players:[{name:'Иван Иванов',rating:null},{name:'Елена Иванова',rating:null}]}]};showImportPreview(importPreview)`);
+ assert.doesNotMatch(ui.node('#dialog').innerHTML,/Создать категорию/);
+ assert.match(ui.node('#dialog').innerHTML,/Выберите пустую категорию/);
+ ui.node('#import-target').value='';
+ ui.click({action:'confirm-import'});
+ assert.equal(D.decode(ui.storage.get(D.key)).entries.length,0);
+ ui.node('#import-target').value='md';
+ ui.click({action:'confirm-import'});
+ const saved=D.decode(ui.storage.get(D.key));
+ assert.deepEqual(saved.categories.map(c=>[c.id,c.code]),[['md','XD']]);
+ assert.equal(saved.entries[0].category,'md');
+});
 test('CSV treats imported spreadsheet formulas as literal player names',async()=>{
  const s=day();s.entries[0].players[0].name='Иван =HYPERLINK(1)';const ui=boot({realState:s});ui.click({action:'export'});
  assert.match(await ui.downloads[0].text(),/"'=HYPERLINK\(1\) Иван"/);

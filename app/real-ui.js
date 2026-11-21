@@ -128,6 +128,12 @@ function importTargets(data){
  const {code,selection}=data;
  return state.categories.filter(c=>c.code===code||!selection&&(c.code==='S'&&['MS','WS'].includes(code)||c.code==='D'&&['MD','WD','XD'].includes(code)));
 }
+function emptyLeagueTargets(data){
+ if(!data.selection)return [];
+ const division=T.divisions.find(item=>item.code===data.code);
+ return state.categories.filter(category=>category.code!==data.code&&category.doubles===division.doubles&&
+  !state.entries.some(entry=>entry.category===category.id));
+}
 function importDialog(){
  if(state.started){toast('Импорт доступен до начала турнира.');return;}
  importPreview=null;importRequest++;
@@ -166,20 +172,22 @@ async function fetchImport(payload){
 }
 function showImportPreview(data){
  const fromLeague=Boolean(data.selection),previous=state.entries.find(entry=>entry.leagueSource===data.selection&&fromLeague);
- const targets=importTargets(data),preferred=previous?.category||(mode==='real'?activeRosterCategory().id:null);
- const addCategory=fromLeague&&!targets.length&&state.categories.length<5;
+ const targets=importTargets(data),emptyTargets=emptyLeagueTargets(data);
+ const preferred=previous?.category||(mode==='real'?activeRosterCategory().id:null);
  const label=previous?'Обновить состав':'Добавить в состав';
  const subtitle=[data.name,data.levelLabel,data.date?.split('-').reverse().join('.'),data.entries.length+' заявок'].filter(Boolean).join(' · ');
  dialog('Проверьте импорт',esc(subtitle),
   '<div class="field"><label for="import-target">Категория SwissCourt</label><select id="import-target" class="form-control">'+
   targets.map(c=>'<option value="'+c.id+'" '+(preferred===c.id?'selected':'')+'>'+esc(c.code+' · '+c.name)+'</option>').join('')+
-  (addCategory?'<option value="new">Создать категорию '+esc(data.code)+'</option>':'')+'</select></div>'+
-  (!targets.length&&!addCategory?'<p class="notice warn">Сначала добавьте разряд '+esc(data.code)+' в настройках.</p>':'')+
+  (!targets.length&&emptyTargets.length?'<option value="">Выберите пустую категорию</option>':'')+
+  emptyTargets.map(c=>'<option value="'+c.id+'">'+esc((c.name||c.code)+' → '+data.code)+'</option>').join('')+'</select></div>'+
+  (!targets.length&&!emptyTargets.length?'<p class="notice warn">Настройте категорию разряда '+esc(data.code)+' во вкладке «Турнир».</p>':'')+
+  (emptyTargets.length?'<p>Для выбранной пустой категории можно сменить разряд на '+esc(data.code)+'.</p>':'')+
   (data.warnings||[]).map(w=>'<p class="notice warn">'+esc(w)+'</p>').join('')+
   '<div class="import-list">'+data.entries.map(e=>'<p>'+e.players.map(p=>esc(C.playerFullName(p))+' · '+(p.rating===null?'рейтинг не указан':p.rating)).join(' / ')+'</p>').join('')+'</div>'+
   (fromLeague?'<p>В игровой день будут подставлены дата, зал и уровень из лиги.</p>':'')+
   (previous?'<p>Обновятся ранее загруженные заявки этого разряда. Если заявку сняли или перенесли в резерв, она уйдёт из состава.</p>':''),
-  cancel+'<button class="btn primary" data-action="confirm-import" '+((!data.entries.length&&!previous||!targets.length&&!addCategory)?'disabled':'')+'>'+label+'</button>');
+  cancel+'<button class="btn primary" data-action="confirm-import" '+((!data.entries.length&&!previous||!targets.length&&!emptyTargets.length)?'disabled':'')+'>'+label+'</button>');
 }
 
 function updateLeagueRoster(day,data,category){
@@ -212,13 +220,15 @@ function updateLeagueRoster(day,data,category){
 function confirmRosterImport(){
  const data=importPreview;
  if(!data)return;
- let category=$('#import-target').value;
+ const category=$('#import-target').value;
  const saved=mutate(day=>{
   if(day.started)throw Error('Турнир уже начался.');
-  if(data.selection&&category==='new'&&day.categories.length<5){
+  if(emptyLeagueTargets(data).some(item=>item.id===category)){
    const division=T.divisions.find(item=>item.code===data.code);
-   category=crypto.randomUUID();
-   day.categories.push({...division,id:category,division:division.id});
+   const target=day.categories.find(item=>item.id===category);
+   const oldDivision=T.divisions.find(item=>item.code===target.code);
+   const name=target.name===oldDivision.name||target.name===target.code?division.name:target.name;
+   Object.assign(target,{division:division.id,code:division.code,short:division.short,name});
   }else if(!importTargets(data).some(item=>item.id===category))throw Error('Выберите подходящую категорию.');
   if(data.selection)updateLeagueRoster(day,data,category);
   else day.entries.push(...data.entries.map(entry=>({id:crypto.randomUUID(),category,players:entry.players})));

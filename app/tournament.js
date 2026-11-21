@@ -14,18 +14,32 @@ const fail=message=>{throw Error(message);};
 const key=(a,b)=>[a,b].sort().join('|');
 const safeId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(value);
 const id=()=>globalThis.crypto.randomUUID();
+function parseRentalDuration(value){
+ const match=String(value).trim().match(/^(\d+):([0-5]\d)$/);
+ const minutes=match?Number(match[1])*60+Number(match[2]):NaN;
+ return Number.isSafeInteger(minutes)&&minutes>0?minutes:NaN;
+}
+function rentalDuration(settings){
+ if(settings.rentalMinutes!==undefined)return settings.rentalMinutes;
+ const clock=/^([01]\d|2[0-3]):[0-5]\d$/;
+ if(!clock.test(settings.start)||!clock.test(settings.end))return NaN;
+ const minutes=value=>Number(value.slice(0,2))*60+Number(value.slice(3));
+ return minutes(settings.end)-minutes(settings.start);
+}
 function newDay(now=new Date()){
  const local=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
  return {version:1,kind:'tournament',id:id(),revision:0,started:false,closed:false,
-  settings:{title:'Клубный турнир',venue:'Юг-Арена',date:local,start:'10:00',end:'13:00',courts:7,level:'Любительский',prepareCount:4},
+  settings:{title:'Клубный турнир',venue:'Юг-Арена',date:local,rentalMinutes:180,courts:7,level:'Любительский',prepareCount:4},
   categories:structuredClone(divisions.filter(c=>['md','wd'].includes(c.id))),entries:[],matches:[],byes:[],history:[]};
 }
 function validate(state,{ready=false}={}){
  if(!state||state.version!==1||state.kind!=='tournament'||!safeId(state.id)||!Number.isInteger(state.revision)||state.revision<0)fail('Неверный формат игрового дня.');
- if(typeof state.started!=='boolean'||typeof state.closed!=='boolean')fail('Неверное состояние турнира.');
+ if(typeof state.started!=='boolean'||typeof state.closed!=='boolean'||state.startedAt!==undefined&&(!state.started||!Number.isFinite(state.startedAt)||state.startedAt<0))fail('Неверное состояние турнира.');
  const s=state.settings;
- if(!s||!Number.isInteger(s.courts)||s.courts<1||s.courts>32||!/^\d{4}-\d{2}-\d{2}$/.test(s.date)||!/^\d{2}:\d{2}$/.test(s.start)||!/^\d{2}:\d{2}$/.test(s.end)||s.end<=s.start)fail('Проверьте дату, время и количество кортов.');
- if(!Number.isFinite(Date.parse(s.date+'T12:00:00Z'))||new Date(s.date+'T12:00:00Z').toISOString().slice(0,10)!==s.date||![s.start,s.end].every(t=>/^([01]\d|2[0-3]):[0-5]\d$/.test(t)))fail('Неверная дата или время.');
+ if(!s||!Number.isInteger(s.courts)||s.courts<1||s.courts>32||!/^\d{4}-\d{2}-\d{2}$/.test(s.date))fail('Проверьте дату и количество кортов.');
+ if(!Number.isFinite(Date.parse(s.date+'T12:00:00Z'))||new Date(s.date+'T12:00:00Z').toISOString().slice(0,10)!==s.date)fail('Неверная дата турнира.');
+ const rental=rentalDuration(s);
+ if(!Number.isSafeInteger(rental)||rental<=0)fail('Укажите длительность аренды в формате ч:мм, например 2:30.');
  for(const name of ['title','venue','level'])if(typeof s[name]!=='string'||!s[name].trim()||s[name].length>100)fail('Заполните название, зал и дивизион.');
  if(!Array.isArray(state.categories)||state.categories.length<1||state.categories.length>5||new Set(state.categories.map(c=>c.id)).size!==state.categories.length)fail('Выберите от одной до пяти категорий.');
  for(const cat of state.categories){
@@ -294,7 +308,7 @@ function publish(state,proposal){
  if(JSON.stringify(actual)!==JSON.stringify(proposal))fail('Результаты изменились. Откройте жеребьёвку заново.');
  state.matches.push(...actual.matches);if(actual.bye)state.byes.push(actual.bye);
 }
-function start(state){
+function start(state,now=Date.now()){
  if(state.started)fail('Турнир уже начат.');validate(state,{ready:true});
  state.drawOrders={};state.groupLots={};
  for(const cat of state.categories){
@@ -311,7 +325,7 @@ function start(state){
    state.matches.push(...proposal.matches);if(proposal.bye)state.byes.push(proposal.bye);
   }
  }
- state.started=true;return validate(state);
+ state.started=true;state.startedAt=now;return validate(state);
 }
 function redraw(state,category){
  if((state.partialRounds||[]).some(p=>p.category===category))fail('Досрочный тур пересчитывается автоматически после результата.');
@@ -362,6 +376,6 @@ function circleStandings(state,category){
  });
 }
 function standings(state,category){return schemeOf(state,category)!=='swiss'?circleStandings(state,category):C.standings(state,category);}
-const api={divisions,newDay,validate,schemeOf,isBracket,bracketContext,groupStandings,totalMatches,seeded,roundCount,roundStatus,draw,publish,start,redraw,finish,standings};
+const api={divisions,newDay,parseRentalDuration,rentalDuration,validate,schemeOf,isBracket,bracketContext,groupStandings,totalMatches,seeded,roundCount,roundStatus,draw,publish,start,redraw,finish,standings};
 root.SwissCourtTournament=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

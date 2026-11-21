@@ -109,12 +109,12 @@ test('bracket advances when opponents are determined and protects called matches
  assert.throws(()=>T.finish(state,semis[0].id,lose),/уже начавшейся/);
  assert.equal(JSON.stringify(state),snapshot);
 });
-test('forecast uses common courts, rest and rental window for parallel categories',()=>{
+test('forecast uses common courts, rest and rental duration for parallel categories',()=>{
  const state=field(2,'circle');
  const women={...T.divisions.find(c=>c.id==='wd'),scheme:'circle',planned:2,scoreFormat:'classic',seeding:'rating'};
  state.categories.push(women);
  state.entries.push(...state.entries.slice().map(e=>({...e,id:e.id+'w',category:'wd',players:e.players.map(p=>({...p,name:p.name+'а'}))})));
- state.settings.courts=1;state.settings.end='10:30';
+ state.settings.courts=1;state.settings.rentalMinutes=30;
  const single=P.estimate(state);
  assert.equal(single.count,2);assert.equal(single.court,40);assert.equal(single.duration,40);assert.equal(single.reserve,-10);
  state.settings.courts=2;
@@ -122,6 +122,47 @@ test('forecast uses common courts, rest and rental window for parallel categorie
  assert.equal(double.duration,20);assert.equal(double.reserve,10);
  const circle=field(4,'circle');circle.settings.courts=2;
  assert.equal(P.estimate(circle).duration,90);
+});
+test('live forecast uses the actual launch and legacy first calls instead of the calendar date',()=>{
+ const state=field(2,'circle');
+ state.settings.date='2026-11-17';
+ state.settings.rentalMinutes=150;
+ const launch=Date.parse('2026-11-21T15:30:00+03:00');
+ T.start(state,launch);
+ C.assign(state,state.matches[0].id,1,launch+5*60000);
+ const now=launch+10*60000;
+ const forecast=P.estimate(state,{actual:true,now});
+ assert.deepEqual([forecast.budget,forecast.elapsed,forecast.duration,forecast.remaining,forecast.reserve],[150,10,25,15,125]);
+ const legacy=structuredClone(state);
+ delete legacy.startedAt;
+ delete legacy.settings.rentalMinutes;
+ Object.assign(legacy.settings,{start:'10:00',end:'12:30'});
+ T.validate(legacy);
+ const restored=P.estimate(legacy,{actual:true,now});
+ assert.deepEqual([restored.budget,restored.elapsed,restored.duration,restored.remaining,restored.reserve],[150,5,20,15,130]);
+ const later=launch+23*60000;
+ T.finish(state,state.matches[0].id,win,later);
+ const ended=P.estimate(state,{actual:true,now:later+4*86400000});
+ assert.deepEqual([ended.elapsed,ended.remaining,ended.reserve],[23,0,127]);
+});
+test('planner accepts a rental duration and starts the clock only when the draw is published',()=>{
+ const state=field(2,'circle');
+ const ui=boot({realState:state,hash:'#plan'});
+ const input=ui.node('#plan-rental-minutes');
+ input.dataset={planSetting:'rentalMinutes'};
+ assert.match(ui.html(),/Длительность аренды/);
+ assert.doesNotMatch(ui.html(),/data-plan-setting="(?:start|end)"/);
+ ui.input('#plan-rental-minutes','2:70');
+ assert.match(ui.node('#plan-overview').innerHTML,/Укажите количество кортов/);
+ ui.input('#plan-rental-minutes','2:30');
+ ui.click({action:'save-plan'});
+ assert.equal(D.decode(ui.storage.get(D.key)).settings.rentalMinutes,150);
+ ui.click({action:'draw'});
+ assert.equal(D.decode(ui.storage.get(D.key)).startedAt,undefined);
+ ui.run('gameNow=()=>1800000000000');
+ ui.click({action:'publish-draw'});
+ assert.equal(D.decode(ui.storage.get(D.key)).startedAt,1800000000000);
+ assert.match(ui.html(),/Прошло 0 мин/);
 });
 test('requested court is assigned directly and score entry keeps manual values and a deciding game',()=>{
  const state=field(2,'circle');T.start(state);

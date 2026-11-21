@@ -3,9 +3,21 @@
 const C=root.SwissCourtCore||(typeof require==='function'?require('./core.js'):null);
 const B=root.SwissCourtBrackets||(typeof require==='function'?require('./brackets.js'):null);
 const T=root.SwissCourtTournament||(typeof require==='function'?require('./tournament.js'):null);
-const clockMinutes=value=>{const [h,m]=value.split(':').map(Number);return h*60+m;};
 const minute=60000;
 const rest=15;
+
+function realStart(state,now){
+ if(Number.isFinite(state.startedAt))return state.startedAt;
+ // Older tournaments did not store their launch time. The first recorded
+ // match gives a better starting point than the date printed on the board.
+ let earliest=Infinity;
+ for(const match of state.matches){
+  if(match.status==='queued')continue;
+  if(Number.isFinite(match.startedAt))earliest=Math.min(earliest,match.startedAt);
+  else if(Number.isFinite(match.endedAt))earliest=Math.min(earliest,match.endedAt-C.formatOf(state,match.category).minutes*minute);
+ }
+ return Number.isFinite(earliest)?earliest:now;
+}
 
 function tasksFor(state,cat,n){
  const ranked=T.seeded(state,cat.id);
@@ -56,9 +68,9 @@ function tasksFor(state,cat,n){
 }
 
 function estimate(state,{actual=false,now=Date.now()}={}){
- const start=clockMinutes(state.settings.start),end=clockMinutes(state.settings.end);
- const origin=Date.parse(state.settings.date+'T'+state.settings.start);
+ const budget=T.rentalDuration(state.settings);
  const live=actual&&state.started;
+ const origin=live?realStart(state,now):now;
  const current=live?Math.max(0,(now-origin)/minute):0;
  const stats=new Map(),tasks=[];
  for(const original of state.categories){
@@ -126,10 +138,12 @@ function estimate(state,{actual=false,now=Date.now()}={}){
  const categories=[...stats.values()];
  for(const metric of categories)metric.span=metric.count&&Number.isFinite(metric.start)?metric.end-metric.start:0;
  const finish=Math.max(0,...categories.map(c=>c.end));
- return {categories,count:categories.reduce((sum,c)=>sum+c.count,0),done:categories.reduce((sum,c)=>sum+c.done,0),
+ const played=categories.reduce((sum,c)=>sum+c.done,0);
+ const elapsed=live?Math.min(current,played===tasks.length?finish:Infinity):null;
+ return {categories,count:tasks.length,done:played,
   invalid:categories.some(c=>c.error)||done.size!==tasks.length,
-  duration:finish,court:categories.reduce((sum,c)=>sum+c.court,0),finish:start+finish,budget:end-start,
-  reserve:end-start-finish};
+  duration:finish,court:categories.reduce((sum,c)=>sum+c.court,0),budget,
+  elapsed,remaining:elapsed===null?null:Math.max(0,finish-elapsed),reserve:budget-finish};
 }
 const api={estimate,rest};
 root.SwissCourtPlanning=api;if(typeof module!=='undefined')module.exports=api;

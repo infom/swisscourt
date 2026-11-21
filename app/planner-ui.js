@@ -4,15 +4,17 @@ let planDraft=null,manualSeedDraft=null;
 const planField=(label,element)=>'<label class="field"><span>'+label+'</span>'+element+'</label>';
 const planOptions=(values,selected)=>Object.entries(values).map(([value,label])=>'<option value="'+esc(value)+'" '+(String(selected)===value?'selected':'')+'>'+esc(label)+'</option>').join('');
 const minutesText=minutes=>{const total=Math.ceil(Math.abs(minutes));return (total>=60?Math.floor(total/60)+' ч ':'')+total%60+' мин';};
-function plannedTime(minutes){
- const time=Math.ceil(minutes);
- return String(Math.floor(time/60)%24).padStart(2,'0')+':'+String(time%60).padStart(2,'0')+(time>=1440?' +'+Math.floor(time/1440)+' д.':'');
+function rentalInput(minutes,attributes){
+ const value=Number.isSafeInteger(minutes)?Math.floor(minutes/60)+':'+String(minutes%60).padStart(2,'0'):'';
+ return '<input class="form-control" type="text" '+attributes+' value="'+value+'" placeholder="2:30" required>';
 }
-function timingStatus(estimate){
+function timingStatus(estimate,showLive=false){
  if(estimate.invalid)return '<div class="plan-state warn">Проверьте настройки категорий</div>';
  const fits=estimate.reserve>=0;
+ const progress=showLive&&estimate.elapsed!==null?'<span>Прошло '+minutesText(Math.floor(estimate.elapsed))+
+  (estimate.done<estimate.count?' · До конца ≈ '+minutesText(estimate.remaining):'')+'</span>':'';
  return '<div class="plan-state '+(fits?'fits':'overrun')+'"><strong>'+(fits?'Укладываемся в аренду':'Выходим за время аренды')+'</strong><span>'+
-  (fits?'Запас ':'Превышение ')+minutesText(estimate.reserve)+' · Окончание около '+plannedTime(estimate.finish)+'</span></div>';
+  (fits?'Запас ':'Превышение ')+minutesText(estimate.reserve)+'</span>'+progress+'</div>';
 }
 function defaultPlan(category,n){
  return {...structuredClone(category),planned:Math.max(2,n||8),scheme:category.scheme||(n>=2&&n<7?'circle':'swiss'),
@@ -21,15 +23,16 @@ function defaultPlan(category,n){
 }
 function ensurePlanDraft(){
  if(planDraft?.id===state.id&&planDraft.revision===state.revision)return;
- planDraft={id:state.id,revision:state.revision,settings:{...state.settings},
+ const {start,end,...settings}=state.settings;
+ planDraft={id:state.id,revision:state.revision,settings:{...settings,rentalMinutes:T.rentalDuration(state.settings)},
   categories:state.categories.map(c=>defaultPlan(c,state.entries.filter(e=>e.category===c.id).length))};
 }
 function peekPlan(){
  const draft={...state,settings:planDraft.settings,categories:planDraft.categories};
  return P.estimate(draft);
 }
-function planOverview(estimate){
- return timingStatus(estimate)+'<div class="plan-totals"><span><b>'+estimate.count+'</b> встреч</span><span><b>'+minutesText(estimate.court)+'</b> на кортах</span><span><b>'+minutesText(estimate.duration)+'</b> в зале</span></div>';
+function planOverview(estimate,showLive=false){
+ return timingStatus(estimate,showLive)+'<div class="plan-totals"><span><b>'+estimate.count+'</b> встреч</span><span><b>'+minutesText(estimate.court)+'</b> на кортах</span><span><b>'+minutesText(estimate.duration)+'</b> в зале</span><span><b>'+minutesText(estimate.budget)+'</b> аренда</span></div>';
 }
 function planMetrics(metric){
  if(metric.error)return '<p class="notice warn">'+esc(metric.error)+'</p>';
@@ -99,8 +102,9 @@ function planner(){
  return heading('Планирование турнира','Подберите схему и формат счёта для каждой категории. Все категории используют общие корты.',
   '<button class="btn primary" data-action="save-plan">Сохранить план</button>')+
   '<section class="panel plan-card"><h2>Зал и аренда</h2><div class="plan-config">'+setting('Зал','venue','text')+
-  setting('Начало','start','time')+setting('Окончание','end','time')+setting('Кортов','courts','number')+'</div></section>'+
-  '<section class="panel plan-card plan-overview" id="plan-overview">'+planOverview(estimate)+'</section>'+
+  planField('Длительность аренды (ч:мм)',rentalInput(draft.settings.rentalMinutes,'id="plan-rental-minutes" data-plan-setting="rentalMinutes"'))+
+  setting('Кортов','courts','number')+'</div></section>'+
+  '<section class="panel plan-card plan-overview" id="plan-overview">'+(planSettingValid(draft.settings)?planOverview(estimate):planSettingHint)+'</section>'+
   (hasRoster?'<p class="table-note">После ввода участников можно пересчитать план по фактическому составу.</p>':'')+
   '<div class="plan-category-list">'+draft.categories.map((c,i)=>planCard(c,i,estimate.categories[i])).join('')+'</div>'+
   '<div class="plan-actions"><button class="btn" data-action="add-plan-category" '+(draft.categories.length>=5?'disabled':'')+'>Добавить категорию</button>'+
@@ -109,25 +113,27 @@ function planner(){
 }
 function liveForecast(expanded=false){
  const estimate=P.estimate(state,{actual:true,now:gameNow()});
- if(expanded)return '<section class="panel plan-card">'+planOverview(estimate)+estimate.categories.map(metric=>
+ if(expanded)return '<section class="panel plan-card">'+planOverview(estimate,true)+estimate.categories.map(metric=>
   '<div class="config-row"><strong>'+esc(cat(metric.id).name)+'</strong>'+planMetrics(metric)+'</div>').join('')+'</section>';
- return '<section class="live-forecast">'+timingStatus(estimate)+'<span>Сыграно '+estimate.done+' из '+estimate.count+'</span><a href="#plan">План</a></section>';
+ return '<section class="live-forecast">'+timingStatus(estimate,true)+'<span>Сыграно '+estimate.done+' из '+estimate.count+'</span><a href="#plan">План</a></section>';
 }
+const planSettingHint='<div class="plan-state warn">Укажите количество кортов и длительность аренды, например 2:30.</div>';
 function planSettingValid(settings){
- return Number.isInteger(settings.courts)&&settings.courts>=1&&settings.courts<=32&&/^\d\d:\d\d$/.test(settings.start)&&/^\d\d:\d\d$/.test(settings.end)&&settings.start<settings.end;
+ return Number.isInteger(settings.courts)&&settings.courts>=1&&settings.courts<=32&&Number.isSafeInteger(settings.rentalMinutes)&&settings.rentalMinutes>0;
 }
 function updatePlanMetrics(){
  const estimate=peekPlan();
- $('#plan-overview').innerHTML=planSettingValid(planDraft.settings)?planOverview(estimate):'<div class="plan-state warn">Проверьте время аренды и число кортов.</div>';
+ $('#plan-overview').innerHTML=planSettingValid(planDraft.settings)?planOverview(estimate):planSettingHint;
  estimate.categories.forEach((metric,i)=>{$('#plan-metric-'+i).innerHTML=planMetrics(metric);});
 }
 function updatePlanField(target,commit){
  if(mode!=='real'||state.started||view!=='plan'||!planDraft)return;
  const {planSetting,plan:field,index}=target.dataset||{};
  if(planSetting){
-  planDraft.settings[planSetting]=planSetting==='courts'?Number(target.value):target.value;
+  const parsed=planSetting==='rentalMinutes'?T.parseRentalDuration(target.value):planSetting==='courts'?Number(target.value):target.value;
+  planDraft.settings[planSetting]=parsed;
   if(planSettingValid(planDraft.settings))updatePlanMetrics();
-  else $('#plan-overview').innerHTML='<div class="plan-state warn">Проверьте время аренды и число кортов.</div>';
+  else $('#plan-overview').innerHTML=planSettingHint;
   return;
  }
  if(!field)return;
@@ -220,7 +226,7 @@ document.addEventListener('click',event=>{
  }
  case 'plan-preset':applyPlanPreset(planDraft.categories[index],id);render();break;
  case 'save-plan':{
-  if(!planSettingValid(planDraft.settings)){toast('Проверьте время аренды и число кортов.');break;}
+  if(!planSettingValid(planDraft.settings)){toast('Укажите количество кортов и длительность аренды, например 2:30.');break;}
   try{
    const next=structuredClone(planDraft);
    for(const c of next.categories){

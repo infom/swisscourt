@@ -81,7 +81,7 @@ function realDrawDialog(category){
     return '<section class="draw-preview"><h3>'+esc(c.code+' · '+c.name)+'</h3><p>'+esc(B.schemes[scheme])+' · '+C.formatOf(next,c.id).label+' · '+T.totalMatches(next,c.id)+' встреч</p>'+
      mismatch+manual+groups+matches.map(m=>'<div class="history-entry">'+matchup(m)+'</div>').join('')+byeDraft(next.byes.filter(b=>b.category===c.id&&b.round===1))+'</section>';
    }).join('');
-   const forecast=P.estimate(next,{actual:true,now:Date.parse(next.settings.date+'T'+next.settings.start)});
+   const forecast=P.estimate(next,{actual:true,now:next.startedAt});
    dialog('Жеребьёвка и посев','Проверьте составы и первые встречи',timingStatus(forecast)+preview,
     cancel+'<button class="btn primary" data-action="publish-draw">Опубликовать и начать</button>');
   }else{
@@ -95,6 +95,7 @@ function byeDraft(byes){return byes.map(b=>'<p class="notice">'+badge(b.category
 function publishRealDraw(){
  if(!realDraft)return;
  if(realDraft.revision!==state.revision){toast('Данные изменились. Откройте жеребьёвку заново.');return;}
+ if(realDraft.first)realDraft.next.startedAt=gameNow();
  if(realDraft.first?persist(realDraft.next):mutate(s=>T.publish(s,realDraft.proposal),'Тур опубликован. Можно вызывать встречи.')){$('#dialog').close();view='dashboard';location.hash='dashboard';realDraft=null;render();}
 }
 function offerRedraw(category){

@@ -7,8 +7,9 @@ const vm=require('node:vm');
 const C=require('../app/core.js');
 const S=require('../app/simulation.js');
 const legacyDay=require('../prototype/fixtures/legacy-day.cjs');
+const B=require('../app/brackets.js'),P=require('../app/planning.js');
 const T=require('../app/tournament.js'),D=require('../app/storage.js'),A=require('../app/scheduling.js');
-const script=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8')+'\n'+fs.readFileSync(path.join(__dirname,'../app/real-ui.js'),'utf8');
+const script=['app.js','planner-ui.js','display-ui.js','real-ui.js'].map(file=>fs.readFileSync(path.join(__dirname,'../app',file),'utf8')).join('\n');
 
 function boot({hash='',search='',savedState,legacyState,simulationControl,realState,lock=true,workerClass}={}){
  const nodes=new Map(),listeners=new Map(),intervals=[],downloads=[];
@@ -34,7 +35,7 @@ function boot({hash='',search='',savedState,legacyState,simulationControl,realSt
  if(legacyState)storage.set('swisscourt-ui-v1-live',JSON.stringify(legacyState));
  if(simulationControl)storage.set('swisscourt-yug-arena-simulation-v1',JSON.stringify(simulationControl));
  const context=vm.createContext({
-  SwissCourtCore:C,SwissCourtSimulation:S,SwissCourtTournament:T,SwissCourtStorage:D,SwissCourtScheduling:A,Worker:workerClass,crypto,AbortSignal,
+  SwissCourtCore:C,SwissCourtBrackets:B,SwissCourtPlanning:P,SwissCourtSimulation:S,SwissCourtTournament:T,SwissCourtStorage:D,SwissCourtScheduling:A,Worker:workerClass,crypto,AbortSignal,
   navigator:{locks:{request:async(name,options,fn)=>fn(lock?{}:null)},storage:{persist:async()=>true}},structuredClone,URLSearchParams,Blob,console,Date,
   URL:class extends URL{static createObjectURL(blob){downloads.push(blob);return 'blob:test';}static revokeObjectURL(){}},
   location:{hash,search,href:'http://localhost/#'+hash},history:{replaceState(){}},

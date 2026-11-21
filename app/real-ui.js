@@ -11,7 +11,7 @@ async function scheduleReadyMatches(force=false){
  const snapshot=structuredClone(state);
  try{
   for(const category of snapshot.categories){
-   if(T.seeded(snapshot,category.id).length<7)continue;
+   if(T.schemeOf(snapshot,category.id)!=='swiss')continue;
    const proposal=typeof Worker==='function'?await new Promise((resolve,reject)=>{
     const worker=new Worker('./scheduling-worker.js');job.worker=worker;
     worker.onmessage=event=>{worker.terminate();job.worker=null;event.data.error?reject(Error(event.data.error)):resolve(event.data.proposal);};
@@ -54,20 +54,36 @@ function roundControls(){
  if(!state.started)return '';
  const complete=state.categories.every(c=>T.roundStatus(state,c.id).complete);
  return '<div class="round-controls">'+state.categories.map(c=>{
-  const r=T.roundStatus(state,c.id),swiss=T.seeded(state,c.id).length>=7;
-  return '<div>'+badge(c.id)+'<span>'+(r.complete?'Все встречи завершены':'Тур '+currentRound(c.id)+' / '+r.totalRounds)+(r.partial?' · встречи тура '+r.round+' добавляются досрочно':'')+'</span>'+(r.canDraw?'<button class="btn primary small" data-action="next-round" data-id="'+c.id+'">Сформировать тур '+(r.round+1)+'</button>':'')+(!state.closed&&swiss&&!r.partial&&r.round>1&&state.matches.filter(m=>m.category===c.id&&m.round===r.round).every(m=>m.status==='queued')?'<button class="btn small" data-action="offer-redraw" data-id="'+c.id+'">Пересчитать тур</button>':'')+'</div>';
- }).join('')+(scheduleError?'<button class="btn small" data-action="retry-scheduling">Повторить расчёт очереди</button>':'')+(complete&&!state.closed?'<button class="btn primary" data-action="close-day">Завершить день</button>':'')+'</div>';
+  const r=T.roundStatus(state,c.id),swiss=T.schemeOf(state,c.id)==='swiss';
+  return '<div>'+badge(c.id)+'<span>'+(r.complete?'Все встречи завершены':esc(stageSummary(c.id)))+(r.partial?' · встречи тура '+r.round+' добавляются досрочно':'')+'</span>'+(r.canDraw?'<button class="btn primary small" data-action="next-round" data-id="'+c.id+'">Сформировать тур '+(r.round+1)+'</button>':'')+(!state.closed&&swiss&&!r.partial&&r.round>1&&state.matches.filter(m=>m.category===c.id&&m.round===r.round).every(m=>m.status==='queued')?'<button class="btn small" data-action="offer-redraw" data-id="'+c.id+'">Пересчитать тур</button>':'')+'</div>';
+ }).join('')+(scheduleError?'<button class="btn small" data-action="retry-scheduling">Повторить расчёт очереди</button>':'')+(complete&&!state.closed?'<button class="btn primary" data-action="close-day">Зафиксировать результаты</button>':'')+'</div>';
 }
 function dayTools(){
  const real=mode==='real';
- return '<section class="panel form-panel"><h2>Игровой день</h2>'+(real?'<p>Изменения сохраняются автоматически на этом устройстве. Резервный файл позволяет перенести день или восстановить его после очистки браузера.</p><div class="day-actions"><button class="btn" data-action="backup">'+icon('download')+'Резервная копия</button><label class="btn">Восстановить из файла<input id="restore-file" type="file" accept=".json,application/json" hidden></label>'+(recoveryState?'<button class="btn" data-action="recover">Восстановить предыдущую запись</button>':'')+(state.closed?'<button class="btn" data-action="reopen-day">Открыть для исправления</button>':'')+'<button class="btn" data-action="new-day">Новый игровой день</button>'+(!state.started?'<button class="btn" data-action="divisions">Выбрать разряды</button>':'')+'</div>':'<a class="btn primary" href="./">Мой турнир</a>')+'<p class="muted" style="margin-top:16px">Демо: <a href="?scenario=live">7 кортов</a> · <a href="?scenario=simulation#board">Симуляция</a></p></section><section class="panel form-panel"><h2>Без интернета</h2><p id="offline-explanation">'+(offlineReady?'Приложение загружено для автономной работы. Можно отключить интернет.':'Пока автономная загрузка не подтверждена. Откройте приложение с интернетом и дождитесь отметки «Офлайн готов».')+'</p><p>На телефоне: меню браузера → «Установить приложение» или «На экран Домой». На компьютере: значок установки в адресной строке.</p></section>';
+ return '<section class="panel form-panel"><h2>Игровой день</h2>'+(real?'<p>Изменения сохраняются автоматически на этом устройстве. Резервный файл позволяет перенести день или восстановить его после очистки браузера.</p><div class="day-actions"><button class="btn" data-action="backup">'+icon('download')+'Резервная копия</button><label class="btn">Восстановить из файла<input id="restore-file" type="file" accept=".json,application/json" hidden></label>'+(recoveryState?'<button class="btn" data-action="recover">Восстановить предыдущую запись</button>':'')+(state.closed?'<button class="btn" data-action="reopen-day">Открыть для исправления</button>':'')+'<button class="btn" data-action="new-day">Новый турнир</button>'+(!state.started?'<a class="btn" href="#plan">Выбрать разряды</a>':'')+'</div>':'<a class="btn primary" href="./">Мой турнир</a>')+'<p class="muted" style="margin-top:16px">Демо: <a href="?scenario=live">7 кортов</a> · <a href="?scenario=simulation#board">Симуляция</a></p></section><section class="panel form-panel"><h2>Без интернета</h2><p id="offline-explanation">'+(offlineReady?'Приложение загружено для автономной работы. Можно отключить интернет.':'Пока автономная загрузка не подтверждена. Откройте приложение с интернетом и дождитесь отметки «Офлайн готов».')+'</p><p>На телефоне: меню браузера → «Установить приложение» или «На экран Домой». На компьютере: значок установки в адресной строке.</p></section>';
 }
 function realDrawDialog(category){
  try{
   if(!state.started){
-   const next=structuredClone(state);T.start(next);realDraft={first:true,revision:state.revision,next};
-   const matches=next.matches.filter(m=>m.round===1);
-   dialog('Первый тур','Проверьте составы и пары',matches.map(m=>'<div class="history-entry">'+matchup(m)+'</div>').join('')+byeDraft(next.byes.filter(b=>b.round===1))+'<p>После публикации составы фиксируются. В круговых разрядах сразу создаётся весь календарь; в швейцарских следующие туры формируются по результатам предыдущего.</p>',cancel+'<button class="btn primary" data-action="publish-draw">Опубликовать и начать</button>');
+   const missing=state.categories.find(c=>c.seeding==='manual'&&state.entries.some(e=>e.category===c.id)&&(
+    !c.manualOrder||c.manualOrder.length!==state.entries.filter(e=>e.category===c.id).length||c.manualOrder.some(id=>entry(id)?.category!==c.id)
+   ));
+   if(missing){openManualSeed(missing.id);return;}
+   const next=structuredClone(state);
+   T.start(next);
+   realDraft={first:true,revision:state.revision,next};
+   const preview=next.categories.map(c=>{
+    const n=next.entries.filter(e=>e.category===c.id).length,scheme=T.schemeOf(next,c.id);
+    const manual=c.seeding==='manual'?'<button class="btn small" data-action="manual-seed" data-id="'+c.id+'">Изменить посев</button>':'';
+    const groups=scheme==='groups'?T.bracketContext(next,c.id).groups.map((ids,i)=>'<p><strong>Группа '+B.letter(i)+'</strong> · '+ids.map(id=>esc(surnames(id))).join(' · ')+'</p>').join(''):'';
+    const matches=next.matches.filter(m=>m.category===c.id&&m.round===1);
+    const mismatch=c.planned&&c.planned!==n?'<p class="notice warn">Планировалось '+c.planned+', фактически '+n+'. Расчёт по фактическому составу.</p>':'';
+    return '<section class="draw-preview"><h3>'+esc(c.code+' · '+c.name)+'</h3><p>'+esc(B.schemes[scheme])+' · '+C.formatOf(next,c.id).label+' · '+T.totalMatches(next,c.id)+' встреч</p>'+
+     mismatch+manual+groups+matches.map(m=>'<div class="history-entry">'+matchup(m)+'</div>').join('')+byeDraft(next.byes.filter(b=>b.category===c.id&&b.round===1))+'</section>';
+   }).join('');
+   const forecast=P.estimate(next,{actual:true,now:Date.parse(next.settings.date+'T'+next.settings.start)});
+   dialog('Жеребьёвка и посев','Проверьте составы и первые встречи',timingStatus(forecast)+preview,
+    cancel+'<button class="btn primary" data-action="publish-draw">Опубликовать и начать</button>');
   }else{
    const r=T.roundStatus(state,category);if(!r.canDraw)throw Error('Завершите текущий тур или проверьте число туров.');
    const proposal=T.draw(state,category,r.round+1);realDraft={revision:state.revision,proposal};
@@ -79,7 +95,7 @@ function byeDraft(byes){return byes.map(b=>'<p class="notice">'+badge(b.category
 function publishRealDraw(){
  if(!realDraft)return;
  if(realDraft.revision!==state.revision){toast('Данные изменились. Откройте жеребьёвку заново.');return;}
- if(mutate(s=>{if(realDraft.first)T.start(s);else T.publish(s,realDraft.proposal);},'Тур опубликован. Можно вызывать встречи.')){$('#dialog').close();view='dashboard';location.hash='dashboard';realDraft=null;render();}
+ if(realDraft.first?persist(realDraft.next):mutate(s=>T.publish(s,realDraft.proposal),'Тур опубликован. Можно вызывать встречи.')){$('#dialog').close();view='dashboard';location.hash='dashboard';realDraft=null;render();}
 }
 function offerRedraw(category){
  dialog('Пересчитать следующий тур?',cat(category).code,'<p>Новый счёт учитывается в таблице. Следующий тур ещё не начался: можно пересчитать пары по обновлённым очкам. При отказе опубликованные соперники сохранятся.</p>',cancel+'<button class="btn primary" data-action="redraw" data-id="'+category+'">Пересчитать</button>');
@@ -89,7 +105,7 @@ function downloadFile(name,content,type){
 }
 function backup(){downloadFile('SwissCourt-'+state.settings.date+'.json',JSON.stringify(state,null,2),'application/json');}
 function divisionDialog(){
- dialog('Разряды игрового дня','От одного до трёх одновременно',T.divisions.map(c=>'<label class="division-choice"><input type="checkbox" name="day-division" value="'+c.id+'" '+(state.categories.some(x=>x.id===c.id)?'checked':'')+'> '+c.code+' · '+c.name+'</label>').join('')+'<p>Разряд с участниками сначала нужно освободить. Остальные составы сохраняются.</p>',cancel+'<button class="btn primary" data-action="save-divisions">Сохранить</button>');
+ dialog('Разряды игрового дня','От одной до пяти одновременно',T.divisions.map(c=>'<label class="division-choice"><input type="checkbox" name="day-division" value="'+c.id+'" '+(state.categories.some(x=>x.id===c.id)?'checked':'')+'> '+c.code+' · '+c.name+'</label>').join('')+'<p>Разряд с участниками сначала нужно освободить. Остальные составы сохраняются.</p>',cancel+'<button class="btn primary" data-action="save-divisions">Сохранить</button>');
 }
 function importDialog(){
  if(state.started){toast('Импорт доступен до начала турнира.');return;}
@@ -108,7 +124,7 @@ async function fetchImport(url){
   }
   importPreview=data;
   dialog('Проверьте импорт',data.name+' · '+data.entries.length+' участников / пар',
-   '<div class="field"><label for="import-target">Добавить в разряд</label><select id="import-target" class="form-control">'+state.categories.filter(c=>c.code===data.code).map(c=>'<option value="'+c.id+'">'+c.code+'</option>').join('')+'</select></div>'+(!state.categories.some(c=>c.code===data.code)?'<p class="notice warn">Сначала добавьте разряд '+esc(data.code)+' в настройках.</p>':'')+
+   '<div class="field"><label for="import-target">Добавить в разряд</label><select id="import-target" class="form-control">'+state.categories.filter(c=>c.code===data.code).map(c=>'<option value="'+c.id+'">'+esc(c.code+' · '+c.name)+'</option>').join('')+'</select></div>'+(!state.categories.some(c=>c.code===data.code)?'<p class="notice warn">Сначала добавьте разряд '+esc(data.code)+' в настройках.</p>':'')+
    (data.warnings||[]).map(w=>'<p class="notice warn">'+esc(w)+'</p>').join('')+'<div class="import-list">'+data.entries.map(e=>'<p>'+e.players.map(p=>esc(C.playerFullName(p))+' · '+(p.rating===null?'рейтинг не указан':p.rating)).join(' / ')+'</p>').join('')+'</div><p>Индивидуальные рейтинги получены из BadminTune. Проверьте их перед стартом; каждый состав можно отредактировать после импорта.</p>',cancel+'<button class="btn primary" data-action="confirm-import" '+(!data.entries.length||!state.categories.some(c=>c.code===data.code)?'disabled':'')+'>Добавить в состав</button>');
  }catch(error){if($('#dialog').open&&$('#import-status')&&requestId===importRequest)$('#import-status').textContent='Не удалось импортировать: '+error.message+' Состав не изменён.';}
 }
@@ -124,7 +140,7 @@ document.addEventListener('click',event=>{
  case 'redraw':if(mutate(s=>T.redraw(s,id),'Тур пересчитан.'))$('#dialog').close();break;
  case 'backup':backup();break;
  case 'new-day':dialog('Создать новый день?','Текущий день будет заменён','<p>Сначала сохраните резервную копию или CSV результатов. Демонстрационные сценарии хранятся отдельно.</p>','<button class="btn" data-action="backup">Скачать копию</button>'+cancel+'<button class="btn primary" data-action="confirm-new-day">Создать новый день</button>');break;
- case 'confirm-new-day':if(persist(T.newDay())){$('#dialog').close();view='settings';filter='all';query='';lookupQuery='';location.hash='settings';render();}break;
+ case 'confirm-new-day':if(persist(T.newDay())){$('#dialog').close();view='plan';filter='all';query='';lookupQuery='';location.hash='plan';render();}break;
  case 'divisions':divisionDialog();break;
  case 'save-divisions':{
   const codes=[...document.querySelectorAll('input[name="day-division"]:checked')].map(el=>el.value);
@@ -133,7 +149,7 @@ document.addEventListener('click',event=>{
  case 'close-day':{
   if(!state.categories.every(c=>T.roundStatus(state,c.id).complete)){toast('Сначала завершите все встречи.');return;}
   const tied=state.categories.filter(c=>T.standings(state,c.id).some(r=>r.tied));
-  dialog('Завершить игровой день?','Результаты сохранятся',tied.length?'<p>В разрядах '+tied.map(c=>c.code).join(', ')+' есть полное равенство показателей. Эти места останутся разделёнными. Приложение не назначает случайного победителя.</p>':'<p>Все встречи завершены. Итоговые места и CSV доступны в таблицах.</p>',cancel+'<button class="btn primary" data-action="confirm-close-day">Завершить</button>');break;
+  dialog('Зафиксировать результаты?','Результаты сохранятся',tied.length?'<p>В разрядах '+tied.map(c=>c.code).join(', ')+' есть разделённые места. Они сохранятся в итогах.</p>':'<p>Все встречи завершены. Итоговые места и CSV доступны в таблицах.</p>',cancel+'<button class="btn primary" data-action="confirm-close-day">Завершить</button>');break;
  }
  case 'confirm-close-day':if(state.categories.every(c=>T.roundStatus(state,c.id).complete)&&persist({...state,closed:true})){$('#dialog').close();render();}break;
  case 'reopen-day':if(persist({...state,closed:false}))render();break;

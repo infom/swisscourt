@@ -1,4 +1,4 @@
-/* SwissCourt 1.0.2: organizer and public display. */
+/* SwissCourt 1.1.0: organizer and public display. */
 'use strict';
 const C=SwissCourtCore;
 const T=SwissCourtTournament,D=SwissCourtStorage;
@@ -92,11 +92,12 @@ function mutate(fn,message){if(boardMode){toast('Табло доступно т�
 function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('show'),4600);}
 const entry=id=>state.entries.find(e=>e.id===id);
 const cat=id=>state.categories.find(c=>c.id===id);
+const repeatedDivision=c=>state.categories.filter(category=>category.code===c.code).length>1;
 const surnames=id=>C.entryLabel(state,id);
 const fullNames=id=>entry(id)?.players.map(p=>esc(C.playerFullName(p))).join('<br>')||'—';
 const pairNames=id=>entry(id)?.players.map(p=>'<span>'+esc(C.playerLabel(state,p))+'</span>').join('')||'—';
 const badge=id=>'<span class="division-tag tag-'+esc(cat(id).code.toLowerCase())+'" title="'+esc(cat(id).name)+'">'+esc(cat(id).code)+'</span>';
-const versus=match=>'<span class="versus" aria-label="'+esc(cat(match.category).name)+' · против"><span class="division-code tag-'+esc(cat(match.category).code.toLowerCase())+'">'+esc(cat(match.category).code)+'</span><small>Тур '+match.round+'</small></span>';
+const versus=match=>'<span class="versus" aria-label="'+esc(cat(match.category).name)+' · против"><span class="division-code tag-'+esc(cat(match.category).code.toLowerCase())+'">'+esc(cat(match.category).code)+'</span><small>'+esc((repeatedDivision(cat(match.category))?cat(match.category).name+' · ':'')+matchStage(match))+'</small></span>';
 function matchup(match,extra='',withActivity=false){
  const side=id=>{
   const busy=withActivity&&C.entryActivity(state,id,gameNow()).playing;
@@ -115,12 +116,13 @@ const currentRound=id=>{
 };
 function categoryProgress(id){
  const category=cat(id),n=state.entries.filter(e=>e.category===id).length;
- const total=n<7?n*(n-1)/2:Math.floor(n/2)*category.rounds;
+ const total=T.totalMatches(state,id);
  const done=state.matches.filter(m=>m.category===id&&m.status==='done').length;
- return {total,done,left:Math.max(0,total-done),round:currentRound(id),rounds:n<7?n-1+n%2:category.rounds};
+ return {total,done,left:Math.max(0,total-done),round:currentRound(id),rounds:state.started?T.roundCount(state,id):category.rounds};
 }
 const totalMatches=()=>state.categories.reduce((sum,c)=>sum+categoryProgress(c.id).total,0);
 const scoreText=m=>m.scores.map(s=>s.join(':')).join(' · ');
+const matchStage=m=>m.group!==undefined?'Группа '+B.letter(m.group)+' · круг '+m.round:m.stage?(m.forPlace>1?'За '+m.forPlace+'-е · ':'')+m.stage:'Тур '+m.round;
 const elapsed=value=>Math.max(0,Math.floor((gameNow()-value)/60000));
 function blockersText(match){
  return C.matchAvailability(state,match).blockers.map(blocker=>{
@@ -148,31 +150,13 @@ function pendingByeMarker(id){
  const bye=state.simulation?.pendingByes.find(bye=>bye.entryId===id);
  return bye?'<span class="bye-marker" title="Тур '+bye.round+': без соперника · +1 очко после завершения тура" aria-label="Пропуск тура '+bye.round+'">'+icon('pause')+'</span>':'';
 }
-function progressLabel(game){
- if(game.bye)return 'Тур '+game.round+' · Пропуск без соперника · +1 очко, без сыгранной встречи';
- return (game.won?'Победа':'Поражение')+' '+game.setsFor+':'+game.setsAgainst+' · Тур '+game.round+' · '+surnames(game.opponentId)+' · '+game.scores.map(score=>score.join(':')).join(', ');
-}
-function gameProgress(id){
- const games=C.entryProgress(state,id),played=games.filter(game=>!game.bye).length;
- const active=C.entryActivity(state,id,gameNow()).playing;
- if(active)games.push({playing:true,round:active.round,court:active.court});
- games.sort((a,b)=>a.round-b.round);
- return '<div class="game-progress" aria-label="Сыграно встреч: '+played+(active?' · Сейчас на корте '+active.court:'')+'">'+games.map(game=>{
-  if(game.playing){const label='Играют на корте '+game.court+' · Тур '+game.round;return '<span class="game-result playing" role="img" data-court="'+game.court+'" title="'+label+'" aria-label="'+label+'"><b aria-hidden="true">'+game.court+'</b></span>';}
-  if(game.bye)return '<button class="game-result bye" data-action="bye-details" data-id="'+game.matchId+'" data-entry="'+esc(id)+'" title="'+esc(progressLabel(game))+'" aria-label="'+esc(progressLabel(game))+'">–</button>';
-  return '<button class="game-result '+(game.won?'win':'loss')+(game.deciding?' deciding':'')+'" data-action="match-details" data-id="'+game.matchId+'" data-entry="'+esc(id)+'" aria-label="'+esc(progressLabel(game))+'">'+icon(game.won?'check':'close')+(game.deciding?'<sup aria-hidden="true">3</sup>':'')+'</button>';
- }).join('')+(!games.length?'<span class="progress-empty" title="Ещё нет завершённых встреч">—</span>':'')+'</div>';
-}
-function progressLegend(){
- return '<div class="progress-legend" aria-label="Обозначения результатов"><span><i class="game-result win">'+icon('check')+'</i>победа</span><span><i class="game-result loss">'+icon('close')+'</i>поражение</span><span><i class="deciding-key">3</i>три партии</span><span><i class="game-result playing">7</i>играют · номер корта</span></div>';
-}
 function preparingMatches(){
  const available=C.queue(state,gameNow());
  return [...available.filter(m=>m.pinned),...available.filter(m=>!m.pinned)].slice(0,prepareMatchCount);
 }
 function restLabel(m){return '<div class="match-rest">'+activityLine(m.a)+activityLine(m.b)+'</div>';}
 function categoryFilters(active,action,all=true){
- return (all?'<button class="filter '+(active==='all'?'active':'')+'" data-action="'+action+'" data-id="all" aria-pressed="'+(active==='all')+'">Все</button>':'')+state.categories.map(c=>'<button class="filter '+(active===c.id?'active':'')+'" data-action="'+action+'" data-id="'+c.id+'" aria-pressed="'+(active===c.id)+'" title="'+esc(c.name)+'">'+badge(c.id)+'</button>').join('');
+ return (all?'<button class="filter '+(active==='all'?'active':'')+'" data-action="'+action+'" data-id="all" aria-pressed="'+(active==='all')+'">Все</button>':'')+state.categories.map(c=>'<button class="filter '+(active===c.id?'active':'')+'" data-action="'+action+'" data-id="'+c.id+'" aria-pressed="'+(active===c.id)+'" title="'+esc(c.name)+'">'+badge(c.id)+(repeatedDivision(c)?'<span class="category-name">'+esc(c.name)+'</span>':'')+'</button>').join('');
 }
 let lookupQuery='';
 let queuePositions=new Map();
@@ -193,11 +177,11 @@ function lookupResults(){
 }
 
 function nav(){
- const items=[['dashboard','grid',state.started?'Очередь':'Подготовка'],['standings','table','Таблицы'],['results','history','Результаты'],['participants','people','Участники'],['settings','settings','Настройки']];
+ const items=[['dashboard','grid',state.started?'Очередь':'Подготовка'],...(mode==='real'?[['plan','clock','План']]:[]),['standings','table','Таблицы'],['results','history','Результаты'],['participants','people','Участники'],['settings','settings','Настройки']];
  return '<div class="workspace-nav"><nav class="nav" aria-label="Основная навигация">'+items.map(([id,ico,label])=>'<a href="#'+id+'" class="'+(view===id?'active':'')+'" '+(view===id?'aria-current="page"':'')+'>'+icon(ico)+'<span>'+label+'</span>'+(id==='dashboard'&&state.started?'<span class="count">'+C.queueItems(state,gameNow()).length+'</span>':'')+'</a>').join('')+'</nav><div class="player-lookup"><label class="search">'+icon('search')+'<input id="player-lookup" class="form-control" type="search" autocomplete="off" placeholder="Когда я играю? Фамилия…" aria-label="Когда я играю — поиск по фамилии" aria-expanded="'+Boolean(lookupQuery)+'" aria-controls="lookup-results" value="'+esc(lookupQuery)+'"></label><div id="lookup-results" class="lookup-results" '+(!lookupQuery?'hidden':'')+' aria-live="polite">'+lookupResults()+'</div></div></div>';
 }
 function topbar(){
- return '<header class="topbar"><a class="brand" href="#dashboard"><span class="brand-mark">'+icon('court')+'</span><strong>SwissCourt</strong><span class="demo-label">v1.0.2</span></a><div class="day-context"><strong>'+esc(state.settings.title)+'</strong><span>'+dateLabel()+' · '+esc(state.settings.venue)+'</span></div><div class="top-actions"><span class="offline-status" title="'+(offlineError||'Заранее откройте приложение с интернетом на каждом устройстве')+'">'+(offlineReady?'● Офлайн готов':'○ Офлайн не готов')+'</span><span class="save-status" title="'+(storageError?'Хранилище недоступно':'Данные сохраняются в этом браузере')+'">'+icon(storageError?'info':'shield')+'</span><button class="btn dark" data-action="board">'+icon('monitor')+'<span>Табло</span></button><button class="icon-btn" data-action="about" aria-label="О приложении">'+icon('info')+'</button></div></header>';
+ return '<header class="topbar"><a class="brand" href="#dashboard"><span class="brand-mark">'+icon('court')+'</span><strong>SwissCourt</strong><span class="demo-label">v1.1.0</span></a><div class="day-context"><strong>'+esc(state.settings.title)+'</strong><span>'+dateLabel()+' · '+esc(state.settings.venue)+'</span></div><div class="top-actions"><span class="offline-status" title="'+(offlineError||'Заранее откройте приложение с интернетом на каждом устройстве')+'">'+(offlineReady?'● Офлайн готов':'○ Офлайн не готов')+'</span><span class="save-status" title="'+(storageError?'Хранилище недоступно':'Данные сохраняются в этом браузере')+'">'+icon(storageError?'info':'shield')+'</span><button class="btn dark" data-action="board">'+icon('monitor')+'<span>Табло</span></button><button class="icon-btn" data-action="about" aria-label="О приложении">'+icon('info')+'</button></div></header>';
 }
 
 function heading(title,subtitle,actions=''){
@@ -216,58 +200,51 @@ function courtCard(number){
 function courtsDock(){
  return '<section class="courts-dock" aria-label="Постоянная панель кортов"><div class="courts-grid '+(state.settings.courts>4?'dense-courts':'')+'" style="--court-count:'+Math.min(4,state.settings.courts)+';--total-courts:'+state.settings.courts+'">'+Array.from({length:state.settings.courts},(_,i)=>courtCard(i+1)).join('')+'</div></section>';
 }
-function queueRow(m,index,compact=false){
+function queueRow(m,index,court=0){
  const availability=C.matchAvailability(state,m),canCall=availability.available&&freeCourts().length>0;
  const position=queuePositions.get(m.id)||0,blocked=blockersText(m);
- return '<article class="queue-row '+(!availability.available?'blocked':'')+'" data-match="'+m.id+'"><div class="queue-order">'+(availability.available?String(position).padStart(2,'0'):icon('clock'))+'</div><div class="queue-match">'+matchup(m,'queue-matchup',true)+(m.pinned&&preparingMatches().some(next=>next.id===m.id)?'<span class="prepare-label">'+icon('pin')+'Приготовиться</span>':'')+(!availability.available?'<div class="block-reasons">'+blocked.map(reason=>'<span>'+esc(reason)+'</span>').join('')+'</div>':'')+'</div><div class="queue-actions">'+(!compact?'<button class="icon-btn '+(m.pinned?'selected':'')+'" data-action="pin" data-id="'+m.id+'" aria-label="'+(m.pinned?'Убрать отметку':'Приготовиться')+': '+esc(surnames(m.a))+'" aria-pressed="'+m.pinned+'" '+(!availability.available?'disabled':'')+' title="Приготовиться">'+icon('pin')+'</button>':'')+'<button class="btn '+(canCall?'primary':'')+'" data-action="assign" data-id="'+m.id+'" '+(!canCall?'disabled':'')+' title="'+esc(!availability.available?blocked.join('. '):!freeCourts().length?'Все корты заняты':'Назначить свободный корт')+'">'+(availability.available?'Вызвать':'Ожидает')+'</button></div></article>';
+ return '<article class="queue-row '+(!availability.available?'blocked':'')+'" data-match="'+m.id+'"><div class="queue-order">'+(availability.available?String(position).padStart(2,'0'):icon('clock'))+'</div><div class="queue-match">'+matchup(m,'queue-matchup',true)+(m.pinned&&preparingMatches().some(next=>next.id===m.id)?'<span class="prepare-label">'+icon('pin')+'Приготовиться</span>':'')+(!availability.available?'<div class="block-reasons">'+blocked.map(reason=>'<span>'+esc(reason)+'</span>').join('')+'</div>':'')+'</div><div class="queue-actions">'+(!court?'<button class="icon-btn '+(m.pinned?'selected':'')+'" data-action="pin" data-id="'+m.id+'" aria-label="'+(m.pinned?'Убрать отметку':'Приготовиться')+': '+esc(surnames(m.a))+'" aria-pressed="'+m.pinned+'" '+(!availability.available?'disabled':'')+' title="Приготовиться">'+icon('pin')+'</button>':'')+'<button class="btn '+(canCall?'primary':'')+'" data-action="'+(court?'assign-to-court':'assign')+'" '+(court?'data-court="'+court+'" ':'')+'data-id="'+m.id+'" '+(!canCall?'disabled':'')+' title="'+esc(!availability.available?blocked.join('. '):!freeCourts().length?'Все корты заняты':'Назначить свободный корт')+'">'+(availability.available?'Вызвать':'Ожидает')+'</button></div></article>';
 }
 function divisionCard(c){
  const p=categoryProgress(c.id);
- return '<div class="division-progress">'+badge(c.id)+'<div class="progress-copy"><span><b>'+p.done+'</b> сыграно · <b>'+p.left+'</b> осталось</span><div class="progress" role="progressbar" aria-label="Прогресс '+c.code+'" aria-valuenow="'+p.done+'" aria-valuemin="0" aria-valuemax="'+p.total+'"><span style="width:'+(p.total?p.done/p.total*100:0)+'%"></span></div></div><small>Тур '+p.round+'/'+p.rounds+'</small></div>';
+ return '<div class="division-progress">'+badge(c.id)+'<div class="progress-copy"><span><b>'+p.done+'</b> сыграно · <b>'+p.left+'</b> осталось</span><div class="progress" role="progressbar" aria-label="Прогресс '+c.code+'" aria-valuenow="'+p.done+'" aria-valuemin="0" aria-valuemax="'+p.total+'"><span style="width:'+(p.total?p.done/p.total*100:0)+'%"></span></div></div><small>'+esc(stageSummary(c.id))+'</small></div>';
 }
 function dashboard(){
  if(!state.started)return preparation();
  const all=C.queueItems(state,gameNow()),list=all.filter(m=>filter==='all'||m.category===filter);
  const ready=list.filter(m=>C.matchAvailability(state,m).available),waiting=list.filter(m=>!C.matchAvailability(state,m).available);
- return (mode==='real'?roundControls():'')+'<section class="queue-panel" id="queue"><div class="queue-toolbar"><div class="row"><h1>Очередь вызова</h1><span class="count">'+all.length+'</span></div><div class="filter-row">'+categoryFilters(filter,'filter')+'</div><span class="queue-help">Отдых &lt; 15 мин — предупреждение, а не запрет</span></div><div class="queue-group-title"><strong>Можно вызвать <span>'+ready.length+'</span></strong><span>Отдых рядом с парой · подробности при наведении</span></div>'+ready.map((m,i)=>queueRow(m,i)).join('')+(!ready.length?'<div class="empty">Сейчас нет доступных встреч. Причины ожидания указаны ниже.</div>':'')+(waiting.length?'<div class="queue-group-title waiting-title"><strong>Ожидают <span>'+waiting.length+'</span></strong><span>Встречи ждут завершения предыдущих игр своих участников</span></div>'+waiting.map((m,i)=>queueRow(m,i)).join(''):'')+'</section><section class="progress-strip" style="--division-count:'+state.categories.length+'" aria-label="Прогресс турниров">'+state.categories.map(divisionCard).join('')+'</section><div class="queue-bottom">'+summary()+'<span>Порядок рекомендуемый. Вызов — по решению организатора.</span></div>';
+ return (mode==='real'?liveForecast()+roundControls():'')+'<section class="queue-panel" id="queue"><div class="queue-toolbar"><div class="row"><h1>Очередь вызова</h1><span class="count">'+all.length+'</span></div><div class="filter-row">'+categoryFilters(filter,'filter')+'</div><span class="queue-help">Отдых &lt; 15 мин — предупреждение, а не запрет</span></div><div class="queue-group-title"><strong>Можно вызвать <span>'+ready.length+'</span></strong><span>Отдых рядом с парой · подробности при наведении</span></div>'+ready.map((m,i)=>queueRow(m,i)).join('')+(!ready.length?'<div class="empty">Сейчас нет доступных встреч. Причины ожидания указаны ниже.</div>':'')+(waiting.length?'<div class="queue-group-title waiting-title"><strong>Ожидают <span>'+waiting.length+'</span></strong><span>Встречи ждут завершения предыдущих игр своих участников</span></div>'+waiting.map((m,i)=>queueRow(m,i)).join(''):'')+'</section><section class="progress-strip" style="--division-count:'+state.categories.length+'" aria-label="Прогресс турниров">'+state.categories.map(divisionCard).join('')+'</section><div class="queue-bottom">'+summary()+'<span>Порядок рекомендуемый. Вызов — по решению организатора.</span></div>';
 }
 
-function preparation(){return heading('Подготовка игрового дня','Проверьте составы и параметры перед первым вызовом.')+'<div class="prep-intro"><div><div class="eyebrow" style="color:#b6cc98;margin-bottom:12px">Всё начинается с хорошей подготовки</div><h2>Ваш следующий игровой день</h2><p>'+dateLabel()+' · '+esc(state.settings.venue)+'<br>'+state.entries.length+' участников и пар · '+state.categories.length+' разряда · '+state.settings.courts+' корта</p></div><button class="btn" data-action="draw">Первый тур'+icon('arrow')+'</button></div><div class="prep-grid"><section class="panel prep-card"><div class="prep-icon">'+icon('settings')+'</div><span class="eyebrow muted">Шаг 01</span><h2>Зал и время</h2><p>Дата, аренда и общие корты для всех разрядов.</p><a class="btn" href="#settings">Настроить день'+icon('arrow')+'</a></section><section class="panel prep-card"><div class="prep-icon">'+icon('people')+'</div><span class="eyebrow muted">Шаг 02</span><h2>Составы и рейтинги</h2><p>Добавьте участников вручную или импортируйте состав.</p><a class="btn" href="#participants">Открыть участников'+icon('arrow')+'</a></section><section class="panel prep-card"><div class="prep-icon">'+icon('court')+'</div><span class="eyebrow muted">Шаг 03</span><h2>Жеребьёвка</h2><p>Посмотрите пары первого тура перед публикацией.</p><button class="btn" data-action="draw">Посмотреть пары'+icon('arrow')+'</button></section></div><div class="notice">'+icon('info')+'Состав фиксируется при публикации первого тура. Результаты сохраняются автоматически на этом устройстве.</div>';}
+function preparation(){
+ if(mode==='real')return heading('Подготовка турнира','Сначала выберите схему, затем проверьте участников и посев.',
+  '<button class="btn" data-action="new-day">Новый турнир</button>')+
+  '<div class="prep-grid"><section class="panel prep-card"><h2>План</h2><p>Корты, аренда, категории и оценка времени.</p><a class="btn primary" href="#plan">Планирование схем</a></section>'+
+  '<section class="panel prep-card"><h2>Составы</h2><p>'+state.entries.length+' участников / пар · '+state.categories.length+' категорий</p><a class="btn" href="#participants">Участники</a></section>'+
+  '<section class="panel prep-card"><h2>Жеребьёвка</h2><p>Проверьте посев и встречи перед запуском.</p><button class="btn" data-action="draw">Жеребьёвка и посев</button></section></div>';
+ return heading('Подготовка игрового дня','Проверьте составы и параметры перед первым вызовом.')+'<div class="prep-intro"><div><div class="eyebrow" style="color:#b6cc98;margin-bottom:12px">Всё начинается с хорошей подготовки</div><h2>Ваш следующий игровой день</h2><p>'+dateLabel()+' · '+esc(state.settings.venue)+'<br>'+state.entries.length+' участников и пар · '+state.categories.length+' разряда · '+state.settings.courts+' корта</p></div><button class="btn" data-action="draw">Первый тур'+icon('arrow')+'</button></div><div class="prep-grid"><section class="panel prep-card"><div class="prep-icon">'+icon('settings')+'</div><span class="eyebrow muted">Шаг 01</span><h2>Зал и время</h2><p>Дата, аренда и общие корты для всех разрядов.</p><a class="btn" href="#settings">Настроить день'+icon('arrow')+'</a></section><section class="panel prep-card"><div class="prep-icon">'+icon('people')+'</div><span class="eyebrow muted">Шаг 02</span><h2>Составы и рейтинги</h2><p>Добавьте участников вручную или импортируйте состав.</p><a class="btn" href="#participants">Открыть участников'+icon('arrow')+'</a></section><section class="panel prep-card"><div class="prep-icon">'+icon('court')+'</div><span class="eyebrow muted">Шаг 03</span><h2>Жеребьёвка</h2><p>Посмотрите пары первого тура перед публикацией.</p><button class="btn" data-action="draw">Посмотреть пары'+icon('arrow')+'</button></section></div><div class="notice">'+icon('info')+'Состав фиксируется при публикации первого тура. Результаты сохраняются автоматически на этом устройстве.</div>';}
 function participants(){
  const entries=state.entries.filter(e=>(filter==='all'||e.category===filter)&&e.players.some(p=>[C.playerFullName(p),p.name].some(name=>C.normalizeName(name).includes(C.normalizeName(query)))));
- return heading('Участники','Составы разрядов и индивидуальные рейтинги.',state.started?'<span class="pill">'+icon('shield')+'Составы зафиксированы</span>':'<button class="btn primary" data-action="edit-entry">'+icon('plus')+'Добавить участника</button>')+(state.started?'<div class="notice">'+icon('info')+'Турнир уже идёт, составы доступны для просмотра. Добавление и замена участников доступны до публикации первого тура.</div>':'')+'<div class="tabs">'+categoryFilters(filter,'filter')+'</div><section class="panel"><div class="table-toolbar"><div class="search">'+icon('search')+'<input class="form-control" id="participant-search" type="search" placeholder="Найти по имени или фамилии" aria-label="Поиск участников" value="'+esc(query)+'"></div><span class="muted" style="font-size:11px">Показано: '+entries.length+'</span>'+(!state.started?'<button class="btn small" data-action="import">'+icon('link')+'Из BadminTune</button>':'')+'</div><div class="table-wrap"><table><thead><tr><th>№</th><th>Участник / пара</th><th>Разряд</th><th class="numeric">Рейтинг</th><th>Действия</th></tr></thead><tbody>'+entries.map((e,i)=>'<tr><td class="muted">'+String(i+1).padStart(2,'0')+'</td><td class="team-cell"><strong>'+e.players.map(p=>esc(C.playerFullName(p))).join('<br>')+'</strong><small>'+e.players.map(p=>p.rating===null?'—':p.rating).join(' + ')+(e.players.length===2?' · среднее пары':' · рейтинг СБР')+'</small></td><td>'+badge(e.category)+'</td><td class="numeric"><strong>'+(e.players.some(p=>p.rating===null)?'Нужен рейтинг':C.rating(e).toLocaleString('ru-RU'))+'</strong></td><td><button class="icon-btn" data-action="edit-entry" data-id="'+e.id+'" aria-label="'+(state.started?'Посмотреть':'Редактировать')+' '+esc(surnames(e.id))+'">'+icon(state.started?'info':'edit')+'</button>'+(!state.started?'<button class="icon-btn" data-action="remove-entry" data-id="'+e.id+'" aria-label="Удалить '+esc(surnames(e.id))+'">'+icon('trash')+'</button>':'')+'</td></tr>').join('')+'</tbody></table>'+(entries.length?'':'<div class="empty">Никого не найдено. Попробуйте другую фамилию.</div>')+'</div></section>';
-}
-const coefficient=value=>value.toLocaleString('ru-RU',{maximumFractionDigits:1});
-const circleRankingOrder='Очки → личные встречи → разница партий в личных встречах → разница воланов в личных встречах → разница партий во всех встречах → разница воланов во всех встречах → меньший рейтинг';
-const swissRankingOrder='Очки → Соперники → Побежденные → личная встреча двух равных пар → отношение партий → отношение игровых очков';
-function standingsTable(id,isBoard=false){
- const rows=T.standings(state,id),swiss=rows.length>=7,p=categoryProgress(id),complete=p.total>0&&p.done===p.total;
- return '<div class="table-wrap"><table class="standings-table"><thead><tr><th class="place-col" title="'+(swiss?swissRankingOrder:circleRankingOrder)+'">№</th><th>Участник / пара</th><th class="progress-col">Прогресс</th><th class="numeric points-col">Очки</th>'+(swiss?'<th class="numeric tiebreak-col" title="Бухгольц — сумма турнирных очков всех соперников; за пропуск — условный соперник">Соперники</th><th class="numeric tiebreak-col" title="Бергер — сумма турнирных очков побеждённых соперников; за пропуск — условный соперник">Побежденные</th>':'')+(!isBoard?'<th class="numeric secondary-stat" title="Игры">И</th><th class="numeric secondary-stat" title="Победы">В</th><th class="numeric secondary-stat" title="Поражения">П</th><th class="numeric secondary-stat">Партии</th>':'')+'</tr></thead><tbody>'+rows.map(r=>{
-  const leader=r.place===1&&r.points>0;
-  const label=r.tied?'Равенство всех показателей':(complete?'Победитель разряда':'Лидер разряда');
-  const details='Очки: '+r.points+(swiss?' · Соперники: '+coefficient(r.buchholz)+' · Побежденные: '+coefficient(r.berger)+(r.headToHead?' · Личная встреча: победа '+surnames(r.headToHead):''):' · Личные встречи: '+r.personalPoints+' · Разница партий: '+r.personalSets+' · Разница воланов: '+r.personalBalls+' · Рейтинг: '+C.rating(r.entry))+' · Партии: '+r.setsFor+':'+r.setsAgainst+' · Игровые очки: '+r.ballFor+':'+r.ballAgainst;
-  return '<tr'+(leader?' class="leader-row"':'')+'><td class="place-col" title="'+esc(details)+'">'+(leader?'<span class="leader-mark" title="'+label+' · 1 место" aria-label="'+label+' · 1 место">'+icon('crown')+'<small>1'+(r.tied?'=':'')+'</small></span>':'<span class="place"'+(r.tied?' title="'+label+'"':'')+'>'+r.place+(r.tied?'=':'')+'</span>')+'</td><td class="standings-names"><div class="standing-team"><span class="standing-players">'+entry(r.entry.id).players.map(p=>'<span>'+esc(C.playerLabel(state,p))+'</span>').join('<span class="teammate-divider"> / </span>')+'</span>'+pendingByeMarker(r.entry.id)+'</div></td><td class="progress-col">'+gameProgress(r.entry.id)+'</td><td class="numeric points-col"><strong>'+r.points+'</strong></td>'+(swiss?'<td class="numeric tiebreak-col">'+coefficient(r.buchholz)+'</td><td class="numeric tiebreak-col">'+coefficient(r.berger)+'</td>':'')+(!isBoard?'<td class="numeric secondary-stat">'+r.played+'</td><td class="numeric secondary-stat">'+r.wins+'</td><td class="numeric secondary-stat">'+r.losses+'</td><td class="numeric secondary-stat">'+r.setsFor+':'+r.setsAgainst+'</td>':'')+'</tr>';
- }).join('')+'</tbody></table></div>';
-}
-function standings(){
- const swiss=state.entries.filter(e=>e.category===selectedCategory).length>=7;
- return heading('Турнирные таблицы','Положение по завершённым встречам. Корты остаются перед глазами.','<button class="btn" data-action="export">'+icon('download')+'CSV · '+esc(cat(selectedCategory).code)+'</button>')+'<div class="tabs">'+categoryFilters(selectedCategory,'category',false)+'</div><section class="panel"><div class="panel-heading">'+badge(selectedCategory)+'<strong>Тур '+currentRound(selectedCategory)+' · '+state.entries.filter(e=>e.category===selectedCategory).length+' участников / пар</strong></div>'+standingsTable(selectedCategory)+progressLegend()+'</section><p class="table-note">'+(swiss?swissRankingOrder+'. Знак = означает полное равенство; для окончательного места нужна дополнительная встреча.':circleRankingOrder+'. Знак = означает полное равенство.')+'</p>';
+ return heading('Участники','Составы категорий и индивидуальные рейтинги.',state.started?'<span class="pill">'+icon('shield')+'Составы зафиксированы</span>':'<button class="btn primary" data-action="edit-entry">'+icon('plus')+'Добавить участника</button>')+(state.started?'<div class="notice">'+icon('info')+'Турнир уже идёт, составы доступны для просмотра. Добавление и замена участников доступны до публикации первого тура.</div>':'')+(!state.started&&mode==='real'?'<div class="plan-actions"><a class="btn" href="#plan">План турнира</a>'+state.categories.filter(c=>c.seeding==='manual').map(c=>'<button class="btn" data-action="manual-seed" data-id="'+c.id+'">Посев · '+esc(c.name)+'</button>').join('')+'<button class="btn primary" data-action="draw">Жеребьёвка и посев</button></div>':'')+'<div class="tabs">'+categoryFilters(filter,'filter')+'</div><section class="panel"><div class="table-toolbar"><div class="search">'+icon('search')+'<input class="form-control" id="participant-search" type="search" placeholder="Найти по имени или фамилии" aria-label="Поиск участников" value="'+esc(query)+'"></div><span class="muted" style="font-size:11px">Показано: '+entries.length+'</span>'+(!state.started?'<button class="btn small" data-action="import">'+icon('link')+'Из BadminTune</button>':'')+'</div><div class="table-wrap"><table><thead><tr><th>№</th><th>Участник / пара</th><th>Разряд</th><th class="numeric">Рейтинг</th><th>Действия</th></tr></thead><tbody>'+entries.map((e,i)=>'<tr><td class="muted">'+String(i+1).padStart(2,'0')+'</td><td class="team-cell"><strong>'+e.players.map(p=>esc(C.playerFullName(p))).join('<br>')+'</strong><small>'+e.players.map(p=>p.rating===null?'—':p.rating).join(' + ')+(e.players.length===2?' · среднее пары':' · рейтинг СБР')+'</small></td><td>'+badge(e.category)+(repeatedDivision(cat(e.category))?' '+esc(cat(e.category).name):'')+'</td><td class="numeric"><strong>'+(e.players.some(p=>p.rating===null)?'Нужен рейтинг':C.rating(e).toLocaleString('ru-RU'))+'</strong></td><td><button class="icon-btn" data-action="edit-entry" data-id="'+e.id+'" aria-label="'+(state.started?'Посмотреть':'Редактировать')+' '+esc(surnames(e.id))+'">'+icon(state.started?'info':'edit')+'</button>'+(!state.started?'<button class="icon-btn" data-action="remove-entry" data-id="'+e.id+'" aria-label="Удалить '+esc(surnames(e.id))+'">'+icon('trash')+'</button>':'')+'</td></tr>').join('')+'</tbody></table>'+(entries.length?'':'<div class="empty">Никого не найдено. Попробуйте другую фамилию.</div>')+'</div></section>';
 }
 function results(){
  const list=doneMatches().filter(m=>filter==='all'||m.category===filter).sort((a,b)=>b.endedAt-a.endedAt);
- return heading('Результаты','Протоколы и исправления.','<button class="btn" data-action="history">'+icon('history')+'История <span class="count">'+state.history.length+'</span></button>')+'<div class="tabs">'+categoryFilters(filter,'filter')+'</div><section class="panel results-list">'+list.map(m=>'<article class="result-row">'+matchup(m)+'<div class="result-score"><strong>'+C.validateScores(m.scores).wins.join(':')+'</strong><span>'+scoreText(m)+'</span></div><time>'+time(m.endedAt)+'</time><button class="btn" data-action="score" data-id="'+m.id+'">'+icon('edit')+'Исправить</button></article>').join('')+(list.length?'':'<div class="empty">Результатов пока нет.</div>')+'</section>';
+ return heading('Результаты','Протоколы и исправления.','<button class="btn" data-action="history">'+icon('history')+'История <span class="count">'+state.history.length+'</span></button>')+'<div class="tabs">'+categoryFilters(filter,'filter')+'</div><section class="panel results-list">'+list.map(m=>'<article class="result-row">'+matchup(m)+'<div class="result-score"><strong>'+C.matchResult(state,m).wins.join(':')+'</strong><span>'+scoreText(m)+'</span></div><time>'+time(m.endedAt)+'</time><button class="btn" data-action="score" data-id="'+m.id+'">'+icon('edit')+'Исправить</button></article>').join('')+(list.length?'':'<div class="empty">Результатов пока нет.</div>')+'</section>';
 }
 
 function settings(){
  const s=state.settings;
- return heading('Настройки игрового дня','Зал, разряды и параметры табло.')+'<div class="settings-grid"><form class="panel form-panel" id="settings-form"><h2>Параметры дня</h2><p>Все разряды используют общие корты.</p><div class="form-grid"><div class="field full"><label for="day-title">Название</label><input id="day-title" class="form-control" name="title" value="'+esc(s.title)+'" maxlength="80" required></div><div class="field full"><label for="venue">Зал</label><input id="venue" class="form-control" name="venue" value="'+esc(s.venue)+'" maxlength="100" required></div><div class="field"><label for="day-date">Дата</label><input id="day-date" class="form-control" name="date" type="date" value="'+s.date+'" required></div><div class="field"><label for="level">Дивизион</label><input id="level" class="form-control" name="level" value="'+esc(s.level)+'" maxlength="60" required></div><div class="field"><label for="start">Начало аренды</label><input id="start" class="form-control" name="start" type="time" value="'+s.start+'" required></div><div class="field"><label for="end">Окончание аренды</label><input id="end" class="form-control" name="end" type="time" value="'+s.end+'" required></div><div class="field"><label for="courts">Количество кортов</label><input id="courts" class="form-control" name="courts" type="number" min="1" max="32" value="'+s.courts+'" '+(state.started?'disabled':'')+' required>'+ (state.started?'<small>Зафиксировано после запуска</small>':'')+'</div><div class="field"><label for="prepare-count">Встреч на табло «Приготовиться»</label><select id="prepare-count" class="form-control" name="prepareCount">'+[prepareMatchCount].map(n=>'<option value="'+n+'" selected>'+n+' встречи · '+n*2+' пар</option>').join('')+'</select></div></div><div id="settings-error" class="error" role="alert"></div><div class="form-actions"><button class="btn primary" type="submit">'+icon('check')+'Сохранить параметры</button></div></form><div class="aside-stack" style="display:flex"><section class="panel form-panel"><h2>Разряды</h2><p>До 6 участников — круговая система, от 7 — швейцарская.</p>'+state.categories.map(c=>{const n=state.entries.filter(e=>e.category===c.id).length;return '<div class="config-row"><div>'+badge(c.id)+'<small>'+n+' '+(c.doubles?'пар':'участниц')+' · '+(n<7?'Круговая':'Швейцарская')+'</small></div>'+(n>=7?'<select class="form-control rounds-select" data-category="'+c.id+'" aria-label="Туров: '+esc(c.short)+'" '+(state.started?'disabled':'')+'><option value="4" '+(c.rounds===4?'selected':'')+'>4 тура</option><option value="5" '+(c.rounds===5?'selected':'')+'>5 туров</option></select>':'<span class="pill">'+(n-1)+' туров</span>')+'</div>';}).join('')+'</section>'+dayTools()+'</div></div>';
+ return heading('Настройки игрового дня','Зал, разряды и параметры табло.')+'<div class="settings-grid"><form class="panel form-panel" id="settings-form"><h2>Параметры дня</h2><p>Все разряды используют общие корты.</p><div class="form-grid"><div class="field full"><label for="day-title">Название</label><input id="day-title" class="form-control" name="title" value="'+esc(s.title)+'" maxlength="80" required></div><div class="field full"><label for="venue">Зал</label><input id="venue" class="form-control" name="venue" value="'+esc(s.venue)+'" maxlength="100" required></div><div class="field"><label for="day-date">Дата</label><input id="day-date" class="form-control" name="date" type="date" value="'+s.date+'" required></div><div class="field"><label for="level">Дивизион</label><input id="level" class="form-control" name="level" value="'+esc(s.level)+'" maxlength="60" required></div><div class="field"><label for="start">Начало аренды</label><input id="start" class="form-control" name="start" type="time" value="'+s.start+'" required></div><div class="field"><label for="end">Окончание аренды</label><input id="end" class="form-control" name="end" type="time" value="'+s.end+'" required></div><div class="field"><label for="courts">Количество кортов</label><input id="courts" class="form-control" name="courts" type="number" min="1" max="32" value="'+s.courts+'" '+(state.started?'disabled':'')+' required>'+ (state.started?'<small>Зафиксировано после запуска</small>':'')+'</div><div class="field"><label for="prepare-count">Встреч на табло «Приготовиться»</label><select id="prepare-count" class="form-control" name="prepareCount">'+[prepareMatchCount].map(n=>'<option value="'+n+'" selected>'+n+' встречи · '+n*2+' пар</option>').join('')+'</select></div></div><div id="settings-error" class="error" role="alert"></div><div class="form-actions"><button class="btn primary" type="submit">'+icon('check')+'Сохранить параметры</button></div></form><div class="aside-stack" style="display:flex"><section class="panel form-panel"><h2>Категории</h2>'+state.categories.map(c=>'<div class="config-row"><div>'+badge(c.id)+' <strong>'+esc(c.name)+'</strong></div><small>'+esc(B.schemes[T.schemeOf(state,c.id)])+' · '+C.formatOf(state,c.id).label+'</small></div>').join('')+(mode==='real'?'<a class="btn" href="#plan">Планирование схем</a>':'')+'</section>'+dayTools()+'</div></div>';
 }
 function board(){
  const upNext=preparingMatches();
- return '<div class="board" style="--division-count:'+Math.min(3,state.categories.length)+'"><header class="board-header"><a class="brand" href="#board"><span class="brand-mark">'+icon('court')+'</span><strong>SwissCourt</strong></a><div class="board-title">'+esc(state.settings.title)+' <span>· '+dateLabel()+' · '+simulationStatus()+'</span></div><div class="row">'+simulationControls()+'<time class="board-clock">'+time(gameNow())+'</time><button class="icon-btn" data-action="fullscreen" aria-label="На весь экран">'+icon('expand')+'</button></div></header><main class="board-tables" aria-label="Все турнирные таблицы">'+state.categories.map(c=>{
+ return '<div class="board" style="--division-count:'+state.categories.length+'"><header class="board-header"><a class="brand" href="#board"><span class="brand-mark">'+icon('court')+'</span><strong>SwissCourt</strong></a><div class="board-title">'+esc(state.settings.title)+' <span>· '+dateLabel()+' · '+simulationStatus()+'</span></div><div class="row">'+simulationControls()+'<time class="board-clock">'+time(gameNow())+'</time><button class="icon-btn" data-action="fullscreen" aria-label="На весь экран">'+icon('expand')+'</button></div></header><main class="board-tables" aria-label="Все турнирные таблицы">'+state.categories.map(c=>{
   const p=categoryProgress(c.id),count=state.entries.filter(e=>e.category===c.id).length;
-  return '<section class="board-division" data-category="'+c.id+'"><div class="board-division-heading">'+badge(c.id)+'<strong>Тур '+p.round+' <span>/ '+p.rounds+'</span></strong><small>'+count+' '+(c.doubles?'пар':'участниц')+'</small></div>'+standingsTable(c.id,true)+'<div class="board-progress"><div class="spread"><span><b>'+p.done+'</b> сыграно</span><span><b>'+p.left+'</b> осталось</span></div><div class="progress"><span style="width:'+(p.total?p.done/p.total*100:0)+'%"></span></div></div></section>';
- }).join('')+'</main><section class="board-next"><div class="board-section-title"><h2>ПРИГОТОВИТЬСЯ</h2><span>Ближайшие встречи · дождитесь объявления организатора</span></div><div class="board-next-grid" style="--next-count:'+Math.min(4,Math.max(1,upNext.length))+'">'+upNext.map(m=>'<article class="board-next-match">'+matchup(m)+'</article>').join('')+(!upNext.length?'<p>Ожидайте следующего вызова</p>':'')+'</div></section><section class="board-current"><div class="board-section-title"><h2>СЕЙЧАС НА КОРТАХ</h2><span>Корона — первое место с учётом дополнительных показателей · = равенство</span></div><div class="board-courts" style="--court-count:'+Math.min(4,state.settings.courts)+';--total-courts:'+state.settings.courts+'">'+Array.from({length:state.settings.courts},(_,i)=>{
+  return '<section class="board-division" data-category="'+c.id+'"><div class="board-division-heading">'+badge(c.id)+
+   '<div><small>'+esc(c.name)+'</small><strong>'+esc(stageSummary(c.id))+'</strong></div>'+
+   (state.started&&T.isBracket(state,c.id)?'<button class="btn small" data-action="full-bracket" data-id="'+c.id+'">Сетка</button>':'')+
+   '</div><div class="board-division-body">'+divisionContent(c.id,true)+'</div>'+'<div class="board-progress"><div class="spread"><span><b>'+p.done+'</b> сыграно</span><span><b>'+p.left+'</b> осталось</span></div><div class="progress"><span style="width:'+(p.total?p.done/p.total*100:0)+'%"></span></div></div></section>';
+ }).join('')+'</main><section class="board-next"><div class="board-section-title"><h2>ПРИГОТОВИТЬСЯ</h2><span>Ближайшие встречи · дождитесь объявления организатора</span></div><div class="board-next-grid" style="--next-count:'+Math.min(4,Math.max(1,upNext.length))+'">'+upNext.map(m=>'<article class="board-next-match">'+matchup(m)+'</article>').join('')+(!upNext.length?'<p>Ожидайте следующего вызова</p>':'')+'</div></section><section class="board-current"><div class="board-section-title"><h2>СЕЙЧАС НА КОРТАХ</h2></div><div class="board-courts" style="--court-count:'+Math.min(4,state.settings.courts)+';--total-courts:'+state.settings.courts+'">'+Array.from({length:state.settings.courts},(_,i)=>{
   const m=state.matches.find(m=>m.status==='playing'&&m.court===i+1);
   return '<article class="board-court '+(!m?'free':'')+'"><div class="board-court-number"><span>КОРТ</span><b>'+(i+1)+'</b></div>'+(m?'<div class="board-court-match"><div class="board-court-meta"><span class="time-'+C.courtTiming(elapsed(m.startedAt))+'"><b data-started="'+m.startedAt+'">'+elapsed(m.startedAt)+'</b> мин</span></div>'+matchup(m)+'</div>':'<strong class="board-court-empty">СВОБОДЕН</strong>')+'</article>';
  }).join('')+'</div></section></div>';
@@ -276,23 +253,17 @@ function render(){
  hideProgressTooltip();
  if(!state.categories.some(category=>category.id===selectedCategory))selectedCategory=state.categories[0].id;
  queuePositions=new Map(C.queue(state,gameNow()).map((match,index)=>[match.id,index+1]));
- if(boardMode){$('#app').innerHTML=board();if(typeof requestAnimationFrame==='function')requestAnimationFrame(fitBoardTables);return;}
- if(!['dashboard','participants','standings','results','settings'].includes(view))view='dashboard';
- const screens={dashboard,participants,standings,results,settings};
+ if(boardMode){
+  const scroll=[...document.querySelectorAll('.board-division-body')].map(node=>node.scrollTop);
+  $('#app').innerHTML=board();
+  document.querySelectorAll('.board-division-body').forEach((node,i)=>{node.scrollTop=scroll[i]||0;});
+  return;
+ }
+ if(!['dashboard','participants','standings','results','settings','plan'].includes(view))view='dashboard';
+ const screens={dashboard,participants,standings,results,settings,plan:planner};
  const previous=$('#workspace-scroll')?.scrollTop||0;
  $('#app').innerHTML='<div class="operator '+(state.started?'is-live':'is-preparation')+'">'+topbar()+appNotice()+(state.started?courtsDock():'')+'<div class="workspace">'+nav()+'<main class="workspace-content" id="workspace-scroll">'+(storageError?'<div class="notice warn" role="alert">'+icon('info')+esc(storageError)+'</div>':'')+screens[view]()+'</main></div></div>';
  $('#workspace-scroll').scrollTop=previous;
-}
-function fitBoardTables(){
- // Keep every row visible when a division has more entrants or the display is shorter.
- document.querySelectorAll('.board-division .table-wrap').forEach(wrapper=>{
-  const table=wrapper.querySelector('table');
-  table.style.transform='';table.style.width='100%';table.style.height='100%';
-  const bounds=table.getBoundingClientRect();
-  if(!wrapper.clientHeight||!wrapper.clientWidth||!bounds.height||!bounds.width)return;
-  const scale=Math.min(1,wrapper.clientHeight/bounds.height,wrapper.clientWidth/bounds.width);
-  if(scale<1){table.style.width=(100/scale)+'%';table.style.height=(100/scale)+'%';table.style.transform='scale('+scale+')';}
- });
 }
 
 function dialog(title,subtitle,body,actions=''){
@@ -300,10 +271,10 @@ function dialog(title,subtitle,body,actions=''){
 }
 function matchDetails(id,entryId){
  const m=state.matches.find(m=>m.id===id&&m.status==='done');if(!m)return;
- const result=C.validateScores(m.scores);if(!result.ok)return;
+ const result=C.matchResult(state,m);if(!result.ok)return;
  const game=C.entryProgress(state,entryId).find(g=>g.matchId===id);
  dialog('Результат встречи',cat(m.category).name+' · Тур '+m.round,
-  matchup(m,'detail-match')+'<div class="detail-score"><strong>'+result.wins.join(':')+'</strong><span>'+scoreText(m)+'</span></div>'+(game?'<p class="detail-outcome">'+esc(surnames(entryId))+' · '+(game.won?'победа':'поражение')+' '+game.setsFor+':'+game.setsAgainst+'</p>':''),
+  matchup(m,'detail-match')+'<div class="detail-score"><strong>'+result.wins.join(':')+'</strong><span>'+scoreText(m)+'</span></div><p>Победа '+esc(surnames(result.winner===0?m.a:m.b))+(winReason[result.decidedBy]?' · '+winReason[result.decidedBy]:'')+'</p>'+(game?'<p class="detail-outcome">'+esc(surnames(entryId))+' · '+(game.won?'победа':'поражение')+' '+game.setsFor+':'+game.setsAgainst+'</p>':''),
   '<button class="btn" data-action="close">Закрыть</button>'+(!boardMode&&mode!=='simulation'?'<button class="btn primary" data-action="score" data-id="'+m.id+'">'+icon('edit')+'Исправить результат</button>':''));
 }
 let progressAnchor=null;
@@ -328,6 +299,13 @@ document.addEventListener('pointerover',event=>{
  const target=event.target.closest('[data-action="match-details"]');
  if(target&&target!==progressAnchor)showProgressTooltip(target);
 });
+document.addEventListener('focusout',event=>{
+ if(!event.target.classList?.contains('score-input')||!$('#dialog').open)return;
+ const match=state.matches.find(m=>m.id===scoreMatchId);
+ if(!match)return;
+ const game=scoreInputs(match).find(game=>game.fields.includes(event.target));
+ if(game&&!scoreAutoFill.has(event.target.id)){commitScoreField(event.target,game);updateScore();}
+});
 document.addEventListener('focusin',event=>{
  const target=event.target.closest('[data-action="match-details"]');if(target)showProgressTooltip(target);
 });
@@ -339,69 +317,92 @@ document.addEventListener('scroll',()=>hideProgressTooltip(),true);
 
 const scoreAutoFill=new Map();
 const cancel='<button class="btn" data-action="close">Отмена</button>';
+const winReason={balls:'по сумме воланов',rating:'по меньшему рейтингу',lot:'по жребию'};
 function scoreDialog(id){
- const m=state.matches.find(m=>m.id===id);if(!m)return;scoreMatchId=id;scoreAutoFill.clear();
- const correction=m.status==='done',values=correction?m.scores:[];
- const body='<div class="score-context"><strong>'+(correction?'Тур '+m.round:'КОРТ '+m.court+' · Тур '+m.round)+'</strong></div><p class="score-entry-hint">0–18: сопернику — 21. Enter — дальше.</p><div class="score-head"><span>Участники</span><span>1 партия</span><span>2 партия</span><span>3 партия</span></div>'+[m.a,m.b].map((id,side)=>'<div class="score-team" id="score-team-'+side+'"><div class="score-team-label"><strong class="team-names">'+pairNames(id)+'</strong><span class="score-wins" id="score-wins-'+side+'">Партий: 0</span></div>'+[0,1,2].map(i=>'<input class="score-input" id="score-'+i+'-'+side+'" type="number" inputmode="numeric" min="0" max="30" step="1" aria-label="'+esc(surnames(id))+' — партия '+(i+1)+'" placeholder="—" value="'+(values[i]?.[side]??'')+'">').join('')+'</div>'+(side===0?'<div class="score-versus">'+versus(m)+'</div>':'')).join('')+'<div class="score-summary" id="score-summary" role="status" aria-live="polite">До двух выигранных партий. Третья нужна только при счёте 1:1.</div><div class="error" id="score-error" role="alert"></div>'+(correction?'<p class="dialog-note">Исправление попадёт в историю. Соперники следующих туров сохранятся.</p>':'');
- dialog(correction?'Исправить результат':'Результат встречи',correction?'Проверьте счёт по протоколу':'Сохранение результата освободит корт',body,(correction?'':'<button class="btn ghost danger" data-action="return-queue" data-id="'+m.id+'">Вернуть в очередь</button>')+'<button class="btn primary" data-action="save-score">'+icon('check')+'Сохранить результат</button>');
- updateScore();setTimeout(()=>$('#score-0-0')?.focus(),40);
+ const match=state.matches.find(m=>m.id===id);
+ if(!match)return;
+ scoreMatchId=id;
+ scoreAutoFill.clear();
+ const correction=match.status==='done',values=correction?match.scores:[],format=C.formatOf(state,match.category);
+ const columns=format.targets.length,grid=' style="--score-columns:'+columns+'"';
+ const fields=side=>format.targets.map((target,i)=>
+  '<input class="score-input" id="score-'+i+'-'+side+'" inputmode="numeric" type="text" pattern="[0-9]{1,2}" maxlength="2" autocomplete="off" aria-label="'+esc(surnames(side===0?match.a:match.b))+' — партия '+(i+1)+'" placeholder="—" value="'+(values[i]?.[side]??'')+'">').join('');
+ const body='<div class="score-context"><strong>'+(!correction?'КОРТ '+match.court+' · ':'')+esc(matchStage(match))+' · '+format.label+'</strong></div>'+
+  '<p class="score-entry-hint">Введите счёт проигравшей стороны. Enter или Tab подтвердит значение и подставит счёт соперника, когда это однозначно.</p>'+
+  '<div class="score-head"'+grid+'><span>Участники</span>'+format.targets.map((target,i)=>'<span>'+(i+1)+' партия<br>до '+target+'</span>').join('')+'</div>'+
+  [match.a,match.b].map((id,side)=>'<div class="score-team" id="score-team-'+side+'"'+grid+'><div class="score-team-label"><strong class="team-names">'+pairNames(id)+'</strong><span class="score-wins" id="score-wins-'+side+'"></span></div>'+fields(side)+'</div>').join('')+
+  '<div class="score-summary" id="score-summary" role="status" aria-live="polite"></div><div class="error" id="score-error" role="alert"></div>';
+ dialog(correction?'Исправить результат':'Результат встречи',correction?'Проверьте счёт по протоколу':'Сохранение результата освободит корт',body,
+  (correction?'':'<button class="btn ghost danger" data-action="return-queue" data-id="'+match.id+'">Вернуть в очередь</button>')+
+  '<button class="btn primary" data-action="save-score">'+icon('check')+'Сохранить результат</button>');
+ updateScore();
+ setTimeout(()=>$('#score-0-0')?.focus(),40);
 }
-
-function rawScores(){return [0,1,2].map(i=>[0,1].map(side=>$('#score-'+i+'-'+side).value));}
-function autoCompleteScore(input){
- const [,game,side]=input.id.split('-'),other=$('#score-'+game+'-'+(1-Number(side)));
- // Editing an automatic value makes it manual. Never overwrite a manual score.
- scoreAutoFill.delete(input.id);
+function scoreInputs(match){
+ return C.formatOf(state,match.category).targets.map((target,i)=>({target,fields:[$('#score-'+i+'-0'),$('#score-'+i+'-1')]}));
+}
+const canSuggest=(value,target)=>/^\d{1,2}$/.test(value)&&Number(value)<target-2;
+function commitScoreField(input,game){
+ if(input.disabled)return;
+ const other=game.fields.find(field=>field!==input);
  const automatic=scoreAutoFill.get(other.id)===input.id;
- const number=Number(input.value),low=input.value!==''&&Number.isInteger(number)&&number>=0&&number<19;
- if(low&&(other.value===''||automatic)){
-  other.value='21';scoreAutoFill.set(other.id,input.id);
- }else if(!low&&automatic){
-  if(other.value==='21')other.value='';
+ if(canSuggest(input.value,game.target)&&(other.value===''||automatic)){
+  other.value=String(game.target);
+  scoreAutoFill.set(other.id,input.id);
+ }else if(automatic){
+  other.value='';
   scoreAutoFill.delete(other.id);
  }
 }
+function scoreState(match){
+ const games=scoreInputs(match);
+ const raw=games.map(({target,fields})=>fields.map((field,side)=>{
+  const other=fields[1-side];
+  return scoreAutoFill.get(field.id)===other.id&&!canSuggest(other.value,target)?'':field.value;
+ }));
+ const winners=raw.map(([a,b],i)=>/^\d{1,2}$/.test(a)&&/^\d{1,2}$/.test(b)&&C.validGame(Number(a),Number(b),games[i].target)?(Number(a)>Number(b)?0:1):-1);
+ const straight=games.length===3&&winners[0]>=0&&winners[0]===winners[1];
+ const scores=straight?raw.slice(0,2):raw;
+ const result=C.matchResult(state,match,scores);
+ return {games,winners,straight,result,scores};
+}
 function updateScore(){
- const raw=rawScores(),firstTwo=raw.slice(0,2);
- const canDecide=firstTwo.every(s=>s.every(x=>x!=='')&&C.validGame(Number(s[0]),Number(s[1])));
- const straight=canDecide&&(Number(raw[0][0])>Number(raw[0][1]))===(Number(raw[1][0])>Number(raw[1][1]));
- [0,1].forEach(side=>{
-  const input=$('#score-2-'+side);input.disabled=straight;
-  if(straight){input.value='';scoreAutoFill.delete(input.id);}
+ const match=state.matches.find(m=>m.id===scoreMatchId);
+ if(!match||!$('#dialog').open)return;
+ const {games,winners,straight,result}=scoreState(match),wins=[0,0];
+ games.forEach(({fields},index)=>{
+  const unused=index===2&&straight;
+  if(!unused&&winners[index]>=0)wins[winners[index]]++;
+  fields.forEach((field,side)=>{
+   field.disabled=unused;
+   field.classList.toggle('game-won',!unused&&winners[index]===side);
+   field.classList.toggle('score-suggested',scoreAutoFill.has(field.id));
+  });
  });
- const scores=rawScores(),wins=[0,0];
- scores.forEach((game,i)=>{
-  const valid=game.every(x=>x!=='')&&C.validGame(Number(game[0]),Number(game[1]));
-  const winner=valid?(Number(game[0])>Number(game[1])?0:1):-1;
-  if(valid)wins[winner]++;
-  [0,1].forEach(side=>$('#score-'+i+'-'+side).classList.toggle('game-won',winner===side));
- });
- const result=C.validateScores(scores),m=state.matches.find(m=>m.id===scoreMatchId);
  [0,1].forEach(side=>{
   const winner=result.ok&&result.winner===side,row=$('#score-team-'+side);
   row.classList.toggle('match-winner',winner);
   row.classList.toggle('is-leading',!result.ok&&wins[side]>wins[1-side]);
-  $('#score-wins-'+side).textContent=winner?'Победа · 2 партии':'Партий: '+wins[side];
+  $('#score-wins-'+side).textContent=winner?'Победа'+(winReason[result.decidedBy]?' '+winReason[result.decidedBy]:''):'Партий: '+wins[side];
  });
- $('#score-summary').textContent=result.ok?'Победа: '+surnames(result.winner===0?m.a:m.b)+' · '+result.wins.join(':'):
-  'Партии '+wins.join(':')+'. '+(wins[0]===1&&wins[1]===1?'Заполните решающую партию.':'До двух выигранных партий.');
+ $('#score-summary').textContent=result.ok?'Победа: '+surnames(result.winner===0?match.a:match.b)+' · '+result.wins.join(':')+
+  (winReason[result.decidedBy]?' · '+winReason[result.decidedBy]:''):result.error;
  $('#score-error').textContent='';
 }
-let preferredCourt=null;
-function assignDialog(id,court){
+function assignDialog(id){
  const m=state.matches.find(m=>m.id===id),free=freeCourts();
  if(!m)return;
  if(!C.matchAvailability(state,m).available){toast(blockersText(m).join('. '));return;}
  if(!free.length){toast('Все корты заняты. Сначала внесите результат.');return;}
  assignMatchId=id;const mins=C.restMinutes(state,m,gameNow());
- dialog('Вызвать на корт',cat(m.category).code+' · Тур '+m.round,matchup(m,'assign-match')+'<div class="court-options">'+free.map((n,i)=>'<label class="court-option"><input type="radio" name="court" value="'+n+'" '+(n===Number(court)||(!free.includes(Number(court))&&i===0)?'checked':'')+'>Корт <b>'+n+'</b></label>').join('')+'</div>'+restLabel(m)+(mins!==null&&mins<15?'<div class="notice warn">'+icon('clock')+'Минимальный отдых — '+mins+' мин. Рекомендуется 15 минут, но вы можете вызвать участников сейчас.</div>':'<p class="dialog-note">Объявите участников и номер корта в микрофон.</p>'),cancel+'<button class="btn primary" data-action="start-match">'+icon('court')+'Назначить и вызвать</button>');
+ dialog('Вызвать на корт',cat(m.category).code+' · Тур '+m.round,matchup(m,'assign-match')+'<div class="court-options">'+free.map((n,i)=>'<label class="court-option"><input type="radio" name="court" value="'+n+'" '+(i===0?'checked':'')+'>Корт <b>'+n+'</b></label>').join('')+'</div>'+restLabel(m)+(mins!==null&&mins<15?'<div class="notice warn">'+icon('clock')+'Минимальный отдых — '+mins+' мин. Рекомендуется 15 минут, но вы можете вызвать участников сейчас.</div>':'<p class="dialog-note">Объявите участников и номер корта в микрофон.</p>'),cancel+'<button class="btn primary" data-action="start-match">'+icon('court')+'Назначить и вызвать</button>');
 }
 
 function editEntryDialog(id){
  const e=id?entry(id):{id:null,category:filter==='all'?state.categories[0].id:filter,players:[{name:'',rating:''},{name:'',rating:''}]},locked=state.started;
  const doubles=cat(e.category).doubles;
  const playerFields=side=>'<div class="field"><label for="player-'+side+'">Игрок '+(side+1)+' · фамилия и имя</label><input class="form-control" id="player-'+side+'" value="'+esc(C.playerFullName(e.players[side]))+'" maxlength="160" placeholder="Иванов Иван" required '+(locked?'disabled':'')+'></div><div class="field"><label for="rating-'+side+'">Индивидуальный рейтинг</label><input class="form-control" id="rating-'+side+'" type="number" min="0" max="99999" step="0.5" value="'+(e.players[side]?.rating??'')+'" required '+(locked?'disabled':'')+'></div>';
- dialog(locked?'Данные участника':id?'Редактировать участника':'Добавить участника',locked?'Состав зафиксирован после запуска':'Рейтинг пары — среднее индивидуальных рейтингов','<form id="entry-form" data-id="'+(id||'')+'"><div class="form-grid"><div class="field full"><label for="entry-category">Разряд</label><select class="form-control" id="entry-category" '+(id||locked?'disabled':'')+'>'+state.categories.map(c=>'<option value="'+c.id+'" '+(e.category===c.id?'selected':'')+'>'+esc(c.name)+'</option>').join('')+'</select></div>'+playerFields(0)+'<div id="second-player" class="field full" style="'+(!doubles?'display:none':'')+'"><div class="form-grid">'+playerFields(1)+'</div></div></div><div id="entry-error" class="error" role="alert"></div></form>',locked?'<button class="btn" data-action="close">Закрыть</button>':cancel+'<button class="btn primary" data-action="save-entry">'+icon('check')+'Сохранить</button>');
+ dialog(locked?'Данные участника':id?'Редактировать участника':'Добавить участника',locked?'Состав зафиксирован после запуска':'Рейтинг пары — среднее индивидуальных рейтингов','<form id="entry-form" data-id="'+(id||'')+'"><div class="form-grid"><div class="field full"><label for="entry-category">Разряд</label><select class="form-control" id="entry-category" '+(locked?'disabled':'')+'>'+state.categories.filter(c=>!id||c.code===cat(e.category).code).map(c=>'<option value="'+c.id+'" '+(e.category===c.id?'selected':'')+'>'+esc(c.name)+'</option>').join('')+'</select></div>'+playerFields(0)+'<div id="second-player" class="field full" style="'+(!doubles?'display:none':'')+'"><div class="form-grid">'+playerFields(1)+'</div></div></div><div id="entry-error" class="error" role="alert"></div></form>',locked?'<button class="btn" data-action="close">Закрыть</button>':cancel+'<button class="btn primary" data-action="save-entry">'+icon('check')+'Сохранить</button>');
 }
 function saveEntry(){
  const form=$('#entry-form'),id=form.dataset.id,category=$('#entry-category').value,count=cat(category).doubles?2:1,players=[];
@@ -429,8 +430,8 @@ function drawDialog(){
 function exportCsv(){
  const quote=v=>{let value=String(v);if(typeof v==='string'&&/^\s*[=+@-]/.test(value))value="'"+value;return '"'+value.replace(/"/g,'""')+'"';};
  const rows=T.standings(state,selectedCategory);
- const swiss=rows.length>=7;
- const lines=[['Игрок 1','Игрок 2','Место','Очки',...(swiss?['Соперники','Побежденные']:[]),'Игры','Победы','Поражения','Партии выиграны','Партии проиграны','Игровые очки выиграны','Игровые очки проиграны','Равенство'],...rows.map(r=>[C.playerFullName(r.entry.players[0]),C.playerFullName(r.entry.players[1]),r.place,r.points,...(swiss?[coefficient(r.buchholz),coefficient(r.berger)]:[]),r.played,r.wins,r.losses,r.setsFor,r.setsAgainst,r.ballFor,r.ballAgainst,r.tied?'Да':''])];
+ const swiss=T.schemeOf(state,selectedCategory)==='swiss';
+ const lines=[['Игрок 1','Игрок 2','Место','Очки',...(swiss?['Соперники','Побежденные']:[]),'Игры','Победы','Поражения','Партии выиграны','Партии проиграны','Игровые очки выиграны','Игровые очки проиграны','Разница воланов 1–2','Разница всех воланов','Отношение партий','Пропуски','Личная встреча','Равенство'],...rows.map(r=>[C.playerFullName(r.entry.players[0]),C.playerFullName(r.entry.players[1]),r.place??'',r.points,...(swiss?[coefficient(r.buchholz),coefficient(r.berger)]:[]),r.played,r.wins,r.losses,r.setsFor,r.setsAgainst,r.ballFor,r.ballAgainst,r.firstTwoDiff,r.ballFor-r.ballAgainst,ratioText(r.setsFor,r.setsAgainst),r.byes,r.headToHead?surnames(r.headToHead):'',r.tied?'Да':''])];
  const blob=new Blob(['\uFEFF'+lines.map(row=>row.map(quote).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='SwissCourt-'+(mode==='real'?'':'DEMO-')+selectedCategory+'-'+state.settings.date+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('CSV сохранён с очками, показателями и текущими местами.');
 }
@@ -438,8 +439,9 @@ function switchScenario(value){mode=value==='prep'?'prep':'live';loadState();if(
 document.addEventListener('click',event=>{
  const target=event.target.closest('[data-action]');if(!target)return;
  const action=target.dataset.action,id=target.dataset.id;
+ if(boardMode&&!['close','fullscreen','match-details','full-bracket','bye-details','simulation-pause','simulation-restart'].includes(action))return;
  switch(action){
- case 'close':$('#dialog').close();preferredCourt=null;break;
+ case 'close':$('#dialog').close();break;
  case 'close-lookup':lookupQuery='';$('#player-lookup').value='';$('#player-lookup').setAttribute('aria-expanded','false');$('#lookup-results').hidden=true;break;
  case 'filter':filter=id;render();break;
  case 'category':selectedCategory=id;render();break;
@@ -453,18 +455,29 @@ document.addEventListener('click',event=>{
  }
  case 'score':if(mode==='real'&&state.closed){toast('Откройте день для исправления в настройках.');break;}if(mode==='simulation'){toast('Результаты симуляции вводятся автоматически.');break;}scoreDialog(id);break;
  case 'match-details':hideProgressTooltip();matchDetails(id,target.dataset.entry);break;
+ case 'entry-stats':showEntryStats(id,target.dataset.group);break;
+ case 'full-bracket':if(state.started&&T.isBracket(state,id))dialog('Полная сетка',esc(cat(id).name),bracketView(id,true),cancel);break;
  case 'save-score':{
-  const result=C.validateScores(rawScores());if(!result.ok){$('#score-error').textContent=result.error;return;}
-  const m=state.matches.find(m=>m.id===scoreMatchId),oldCourt=m.court,correcting=m.status==='done';
+  const m=state.matches.find(m=>m.id===scoreMatchId);
+  if(!m)break;
+  for(const game of scoreInputs(m))for(const input of game.fields)if(!scoreAutoFill.has(input.id))commitScoreField(input,game);
+  const {result,scores}=scoreState(m);
+  if(!result.ok&&!result.needsLot){$('#score-error').textContent=result.error;return;}
+  const oldCourt=m.court,correcting=m.status==='done';
   let corrected=null;
-  if(mutate(s=>{if(mode==='real')corrected=T.finish(s,scoreMatchId,result.scores);else C.finish(s,scoreMatchId,result.scores);},correcting?'Результат исправлен. Изменение записано в историю.':'Результат сохранён. Корт '+oldCourt+' свободен.')){$('#dialog').close();if(corrected?.redraw)offerRedraw(corrected.redraw);}break;
+  if(mutate(s=>{if(mode==='real')corrected=T.finish(s,scoreMatchId,scores);else C.finish(s,scoreMatchId,scores);},correcting?'Результат исправлен. Изменение записано в историю.':'Результат сохранён. Корт '+oldCourt+' свободен.')){$('#dialog').close();if(corrected?.redraw)offerRedraw(corrected.redraw);}break;
  }
  case 'return-queue':dialog('Вернуть встречу в очередь?','Корт освободится без результата','<p>Соперники останутся прежними. Введённый, но не сохранённый счёт будет очищен.</p>',cancel+'<button class="btn primary" data-action="confirm-return" data-id="'+id+'">Вернуть в очередь</button>');break;
  case 'confirm-return':if(mutate(s=>C.returnToQueue(s,id),'Встреча возвращена в очередь, корт свободен.'))$('#dialog').close();break;
  case 'pin':mutate(s=>{const m=s.matches.find(m=>m.id===id);if(!C.matchAvailability(s,m).available)throw Error('Пока нельзя готовить эту встречу: игрок занят или его предыдущая встреча не завершена.');if(!m.pinned&&s.matches.filter(m=>m.status==='queued'&&m.pinned).length>=prepareMatchCount)throw Error('На табло уже отмечены 4 встречи (8 пар). Уберите одну отметку.');m.pinned=!m.pinned;},'Блок «Приготовиться» обновлён');break;
- case 'assign':assignDialog(id,preferredCourt);preferredCourt=null;break;
+ case 'assign':assignDialog(id);break;
+ case 'assign-to-court':{
+  const court=Number(target.dataset.court);
+  if(mutate(s=>C.assign(s,id,court),'Встреча назначена на корт '+court+'. Объявите участников.'))$('#dialog').close();
+  break;
+ }
  case 'choose-match':{
-  preferredCourt=Number(target.dataset.court);const list=C.queueItems(state,gameNow());dialog('Встреча на корт '+preferredCourt,'Выберите участников из очереди',list.length?list.map((m,i)=>queueRow(m,i,true)).join(''):'<p>В очереди пока нет доступных встреч.</p>');break;
+  const court=Number(target.dataset.court),list=C.queueItems(state,gameNow());dialog('Встреча на корт '+court,'Выберите участников из очереди',list.length?list.map((m,i)=>queueRow(m,i,court)).join(''):'<p>В очереди пока нет доступных встреч.</p>');break;
  }
  case 'start-match':{const court=Number($('input[name="court"]:checked')?.value);if(mutate(s=>C.assign(s,assignMatchId,court),'Встреча назначена на корт '+court+'. Объявите участников.'))$('#dialog').close();break;}
  case 'edit-entry':editEntryDialog(id);break;
@@ -483,11 +496,11 @@ document.addEventListener('click',event=>{
  case 'history':dialog('История исправлений','Исходный и изменённый счёт',state.history.length?state.history.map(h=>{const m=state.matches.find(m=>m.id===h.matchId);return '<div class="history-entry">'+matchup(m)+'<small>'+time(h.at)+' · '+h.old.map(s=>s.join(':')).join(', ')+' → '+h.new.map(s=>s.join(':')).join(', ')+'</small></div>';}).join(''):'<p>Исправлений пока нет. Они появятся здесь после изменения сохранённого результата.</p>','<button class="btn" data-action="close">Закрыть</button>');break;
  case 'reset':dialog('Начать сценарий заново?','Только текущий демонстрационный сценарий','<p>Внесённые в этот сценарий результаты, участники и параметры будут заменены исходным демо-набором. Второй сценарий сохранится.</p>',cancel+'<button class="btn danger" data-action="confirm-reset">Сбросить демо-данные</button>');break;
  case 'confirm-reset':if(persist(C.seed(mode))){$('#dialog').close();view='dashboard';location.hash='dashboard';render();toast('Демонстрационный сценарий восстановлен.');}break;
- case 'about':dialog('SwissCourt 1.0.2','Проведение турнира по бадминтону','<p>Швейцарская система на 4–5 туров и круговая для 2–6 участников. Очередь, корты, результаты и табло работают на вашем устройстве без интернета после подготовки автономного режима.</p><p>Данные сохраняются автоматически. Резервная копия доступна в настройках. Демо и симуляция хранятся отдельно от вашего турнира.</p><p>Технические поражения, снятия и дополнительные встречи при полном равенстве не автоматизированы. Не вводите фиктивный счёт вместо неявки.</p>','<button class="btn primary" data-action="close">Закрыть</button>');break;
+ case 'about':dialog('SwissCourt 1.1.0','Проведение турнира по бадминтону','<p>Круговая, швейцарская на 3–6 туров, олимпийка и группы с плей-офф. Очередь, корты, результаты и табло работают на вашем устройстве без интернета после подготовки автономного режима.</p><p>Данные сохраняются автоматически. Резервная копия доступна в настройках. Демо и симуляция хранятся отдельно от вашего турнира.</p><p>Технические поражения, снятия и дополнительные встречи при полном равенстве не автоматизированы. Не вводите фиктивный счёт вместо неявки.</p>','<button class="btn primary" data-action="close">Закрыть</button>');break;
  }
 });
 document.addEventListener('input',event=>{
- if(event.target.classList.contains('score-input')){autoCompleteScore(event.target);updateScore();}
+ if(event.target.classList.contains('score-input')){scoreAutoFill.delete(event.target.id);updateScore();}
  if(event.target.id==='player-lookup'){
   lookupQuery=event.target.value;
   $('#lookup-results').innerHTML=lookupResults();$('#lookup-results').hidden=!lookupQuery.trim();
@@ -496,6 +509,13 @@ document.addEventListener('input',event=>{
  if(event.target.id==='participant-search'){
   const pos=event.target.selectionStart;query=event.target.value;render();const input=$('#participant-search');input.focus();if(input.type!=='search'||pos!==null)try{input.setSelectionRange(pos,pos);}catch{}
  }
+});
+document.addEventListener('focusout',event=>{
+ if(!event.target.classList?.contains('score-input')||!$('#dialog').open)return;
+ const match=state.matches.find(m=>m.id===scoreMatchId);
+ if(!match)return;
+ const game=scoreInputs(match).find(game=>game.fields.includes(event.target));
+ if(game&&!scoreAutoFill.has(event.target.id)){commitScoreField(event.target,game);updateScore();}
 });
 document.addEventListener('focusin',event=>{
  if(event.target.classList?.contains('score-input'))event.target.select();
@@ -516,7 +536,6 @@ document.addEventListener('submit',event=>{
 });
 window.addEventListener('hashchange',()=>{if(boardMode)return;view=location.hash.slice(1)||'dashboard';filter='all';query='';lookupQuery='';render();$('#workspace-scroll').scrollTop=0;});
 window.addEventListener('storage',event=>{if(mode==='simulation'&&event.key===simulationStorageKey){initSimulation();refreshSimulation(true);return;}if(event.key===storageKey()){loadState();if(mode!=='real')C.ensureRoundRobinSchedule(state);if($('#dialog').open){$('#dialog').close();toast('Данные изменились в другой вкладке. Откройте встречу заново.');}render();}});
-window.addEventListener('resize',()=>{if(boardMode)fitBoardTables();});
 document.addEventListener('visibilitychange',()=>{if(mode==='simulation'&&!document.hidden)refreshSimulation(true);});
 setInterval(()=>{
  if(mode==='simulation')refreshSimulation();
@@ -535,7 +554,13 @@ document.addEventListener('keydown',event=>{
  if(event.key==='Escape')hideProgressTooltip();
  if(event.key==='Escape'&&lookupQuery){lookupQuery='';$('#player-lookup').value='';$('#player-lookup').setAttribute('aria-expanded','false');$('#lookup-results').hidden=true;}
  if(event.key==='Enter'&&event.target.classList.contains('score-input')){
-  event.preventDefault();const order=['score-0-0','score-0-1','score-1-0','score-1-1','score-2-0','score-2-1'].map(id=>document.getElementById(id)).filter(el=>!el.disabled);
-  const next=order.slice(order.indexOf(event.target)+1).find(input=>!scoreAutoFill.has(input.id));if(next)next.focus();else document.querySelector('[data-action="save-score"]').focus();
+  event.preventDefault();
+  const match=state.matches.find(m=>m.id===scoreMatchId),games=scoreInputs(match);
+  const game=games.find(game=>game.fields.includes(event.target));
+  if(game&&!scoreAutoFill.has(event.target.id))commitScoreField(event.target,game);
+  updateScore();
+  const order=games.flatMap(game=>game.fields).filter(el=>!el.disabled);
+  const next=order.slice(order.indexOf(event.target)+1).find(input=>!scoreAutoFill.has(input.id));
+  if(next)next.focus();else document.querySelector('[data-action="save-score"]').focus();
  }
 });

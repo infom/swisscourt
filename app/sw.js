@@ -1,6 +1,6 @@
 'use strict';
 const CACHE='swisscourt-__BUILD__';
-const ASSETS=['./','./index.html','./styles.css','./core.js','./tournament.js','./scheduling.js','./scheduling-worker.js','./storage.js','./simulation.js','./app.js','./real-ui.js','./manifest.webmanifest','./icon.svg','./icon-192.png','./icon-512.png'];
+const ASSETS=['./','./index.html','./styles.css','./core.js','./brackets.js','./matching.js','./tournament.js','./scheduling.js','./scheduling-worker.js','./planning.js','./storage.js','./simulation.js','./app.js','./real-ui.js','./planner-ui.js','./display-ui.js','./manifest.webmanifest','./icon.svg','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS))));
 // Never skip waiting: a running tournament keeps one coherent app version.
 self.addEventListener('activate',event=>event.waitUntil((async()=>{

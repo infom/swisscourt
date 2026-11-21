@@ -1,5 +1,5 @@
 'use strict';
-importScripts('./core.js','./tournament.js','./scheduling.js');
+importScripts('./core.js','./brackets.js','./matching.js','./tournament.js','./scheduling.js');
 self.onmessage=event=>{
  const {state,category}=event.data;
  try{self.postMessage({proposal:SwissCourtScheduling.plan(state,category)});}

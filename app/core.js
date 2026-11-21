@@ -62,7 +62,7 @@ function restTiming(minutes){return minutes===null?'unplayed':minutes<5?'critica
 function entryProgress(state,id){
  const games=state.matches.filter(m=>m.status==='done'&&(m.a===id||m.b===id))
   .slice().sort((a,b)=>a.round-b.round||a.endedAt-b.endedAt).flatMap(m=>{
-   const result=validateScores(m.scores);if(!result.ok)return [];
+   const result=matchResult(state,m);if(!result.ok)return [];
    const side=m.a===id?0:1;
    return [{matchId:m.id,round:m.round,opponentId:side===0?m.b:m.a,won:result.winner===side,
     setsFor:result.wins[side],setsAgainst:result.wins[1-side],deciding:m.scores.length===3,
@@ -84,35 +84,77 @@ function ensureRoundRobinSchedule(state){
 }
 function matchAvailability(state,match){
  if(match.status!=='queued')return {available:false,blockers:[]};
- const blockers=[];
+ const blockers=[],real=state.kind==='tournament';
+ const same=m=>m.a===match.a||m.b===match.a||m.a===match.b||m.b===match.b;
  for(const active of state.matches.filter(m=>m.status==='playing'&&m.id!==match.id)){
+  if(real&&!same(active))continue;
   const players=sharedPlayers(state,[match.a,match.b],[active.a,active.b]);
   if(players.length)blockers.push({type:'busy',court:active.court,matchId:active.id,players});
  }
- const earlier=state.matches.filter(m=>m.category===match.category&&m.round<match.round&&m.status!=='done'&&(state.kind!=='tournament'||sharedPlayers(state,[match.a,match.b],[m.a,m.b]).length));
+ const earlier=state.matches.filter(m=>m.category===match.category&&m.round<match.round&&m.status!=='done'&&(!real||same(m)));
  if(earlier.length){const round=Math.min(...earlier.map(m=>m.round));blockers.push({type:'round',round,remaining:earlier.filter(m=>m.round===round).length});}
  return {available:match.status==='queued'&&blockers.length===0,blockers};
 }
-function validGame(a,b){if(!Number.isInteger(a)||!Number.isInteger(b)||a<0||b<0||a>30||b>30||a===b)return false;const high=Math.max(a,b),low=Math.min(a,b);return high===21&&low<=19||high>21&&high<30&&high-low===2||high===30&&(low===28||low===29);}
-function validateScores(raw){
- const scores=[];let wins=[0,0];
- for(let i=0;i<raw.length;i++){
-  const [a,b]=raw[i];if((a===''||a==null)&&(b===''||b==null))continue;
-  if(wins.includes(2))return {ok:false,error:'После двух выигранных партий встреча завершена. Уберите лишнюю партию.'};
-  if(a===''||b===''||a==null||b==null)return {ok:false,error:'Заполните оба значения в партии '+(i+1)+'.'};
-  if(i!==scores.length)return {ok:false,error:'Заполняйте партии по порядку.'};
-  const x=Number(a),y=Number(b);if(!validGame(x,y))return {ok:false,error:'Партия '+(i+1)+': до 21, после 20:20 — разница 2, предел — 30.'};
-  scores.push([x,y]);wins[x>y?0:1]++;
- }
- if(!wins.includes(2))return {ok:false,error:'Для результата нужны две выигранные партии у одного участника.'};
- return {ok:true,scores,wins,winner:wins[0]===2?0:1};
+const scoreFormats={
+ classic:{label:'3×21',targets:[21,21,21],minutes:20},
+ two21:{label:'2×21',targets:[21,21],minutes:18},
+ shortFinal:{label:'2×21+11',targets:[21,21,11],minutes:19},
+ best15:{label:'3×15',targets:[15,15,15],minutes:16},
+ two15:{label:'2×15',targets:[15,15],minutes:13}
+};
+function formatOf(state,category){
+ const key=state.categories.find(c=>c.id===category)?.scoreFormat;
+ return Object.hasOwn(scoreFormats,key)?scoreFormats[key]:scoreFormats.classic;
 }
+const capOf=target=>({21:30,15:21,11:15})[target];
+const blank=value=>value===''||value==null;
+function validGame(a,b,target=21){
+ const cap=capOf(target);
+ if(!Number.isInteger(a)||!Number.isInteger(b)||a<0||b<0||a>cap||b>cap||a===b)return false;
+ const high=Math.max(a,b),low=Math.min(a,b);
+ return high===target&&low<=target-2||high>target&&(high-low===2||high===cap&&high-low===1);
+}
+function validateScores(raw,{format=scoreFormats.classic,ratings=[0,0],lotWinner}={}){
+ const scores=[],wins=[0,0],balls=[0,0];
+ for(let i=0;i<raw.length;i++){
+  const [a,b]=raw[i];
+  if(blank(a)&&blank(b))continue;
+  const target=format.targets[i];
+  if(!target||wins.includes(2))return {ok:false,error:'Лишняя партия. Проверьте формат встречи.'};
+  if(blank(a)||blank(b))return {ok:false,error:'Заполните оба значения в партии '+(i+1)+'.'};
+  if(i!==scores.length)return {ok:false,error:'Заполняйте партии по порядку.'};
+  const parse=value=>typeof value==='number'||typeof value==='string'&&/^\d{1,2}$/.test(value)?Number(value):NaN;
+  const x=parse(a),y=parse(b);
+  if(!validGame(x,y,target))return {ok:false,error:'Партия '+(i+1)+' до '+target+', разница 2, предел '+capOf(target)+'.'};
+  scores.push([x,y]);wins[x>y?0:1]++;balls[0]+=x;balls[1]+=y;
+ }
+ if(wins.includes(2))return {ok:true,scores,wins,balls,winner:wins[0]===2?0:1,decidedBy:'sets'};
+ if(format.targets.length===2&&scores.length===2){
+  if(balls[0]!==balls[1])return {ok:true,scores,wins,balls,winner:balls[0]>balls[1]?0:1,decidedBy:'balls'};
+  if(ratings[0]!==ratings[1])return {ok:true,scores,wins,balls,winner:ratings[0]<ratings[1]?0:1,decidedBy:'rating'};
+  if(lotWinner===0||lotWinner===1)return {ok:true,scores,wins,balls,winner:lotWinner,decidedBy:'lot'};
+  return {ok:false,needsLot:true,error:'Равенство партий, воланов и рейтинга. Победителя определит жребий при сохранении.'};
+ }
+ return {ok:false,error:format.targets.length===2?'Заполните обе партии.':'Для результата нужны две выигранные партии у одного участника.'};
+}
+function matchResult(state,match,scores=match.scores,lotWinner=match.lotWinner){
+ return validateScores(scores,{
+  format:formatOf(state,match.category),
+  ratings:[match.a,match.b].map(id=>rating(state.entries.find(e=>e.id===id))),
+  lotWinner
+ });
+}
+function shortScore(scores){return scores.map(([a,b])=>a>b?String(b):'−'+a).join(';');}
 function restMinutes(state,match,now=Date.now()){
- const previous=state.matches.filter(m=>m.status==='done'&&m.id!==match.id&&sharedPlayers(state,[match.a,match.b],[m.a,m.b]).length).map(m=>m.endedAt);
+ const previous=state.matches.filter(m=>m.status==='done'&&m.id!==match.id&&(state.kind==='tournament'?
+  m.a===match.a||m.b===match.a||m.a===match.b||m.b===match.b:sharedPlayers(state,[match.a,match.b],[m.a,m.b]).length)).map(m=>m.endedAt);
  return previous.length?Math.max(0,Math.floor((now-Math.max(...previous))/60000)):null;
 }
 function queue(state,now=Date.now()){
- return state.matches.filter(m=>m.status==='queued'&&matchAvailability(state,m).available).sort((a,b)=>Number(restMinutes(state,a,now)!==null&&restMinutes(state,a,now)<15)-Number(restMinutes(state,b,now)!==null&&restMinutes(state,b,now)<15));
+ return state.matches.filter(m=>m.status==='queued'&&matchAvailability(state,m).available).map(match=>{
+  const rest=restMinutes(state,match,now);
+  return {match,short:rest!==null&&rest<15?1:0};
+ }).sort((a,b)=>a.short-b.short).map(row=>row.match);
 }
 function queueItems(state,now=Date.now()){
  const ready=queue(state,now);
@@ -134,9 +176,13 @@ function assign(state,id,court,now=Date.now()){
 }
 function finish(state,id,raw,now=Date.now()){
  const match=state.matches.find(m=>m.id===id);if(!match||!['playing','done'].includes(match.status))throw Error('Для этой встречи нельзя сохранить результат.');
- const result=validateScores(raw);if(!result.ok)throw Error(result.error);
+ let result=matchResult(state,match,raw);
+ if(result.needsLot)result=matchResult(state,match,raw,crypto.getRandomValues(new Uint8Array(1))[0]%2);
+ if(!result.ok)throw Error(result.error);
  const correction=match.status==='done';
- if(correction)state.history.unshift({matchId:id,old:match.scores,new:result.scores,at:now});
+ if(correction)state.history.unshift({matchId:id,old:match.scores,new:result.scores,at:now,
+  ...(match.lotWinner!==undefined?{oldLot:match.lotWinner}:{}),...(result.decidedBy==='lot'?{newLot:result.winner}:{})});
+ if(result.decidedBy==='lot')match.lotWinner=result.winner;else delete match.lotWinner;
  match.scores=result.scores;match.status='done';if(!correction)match.endedAt=now;delete match.court;
  return result;
 }
@@ -163,7 +209,7 @@ function rankStandings(rows,done,swiss=true){
    if(group.length!==2)return [group];
    const [a,b]=group,meeting=done.filter(m=>[m.a,m.b].includes(a.entry.id)&&[m.a,m.b].includes(b.entry.id));
    if(meeting.length!==1)return [group];
-   const result=validateScores(meeting[0].scores);if(!result.ok)return [group];
+   const result=meeting[0].result||validateScores(meeting[0].scores);if(!result.ok)return [group];
    const winner=result.winner===0?meeting[0].a:meeting[0].b;
    group.forEach(row=>row.headToHead=winner);
    return group[0].entry.id===winner?[[group[0]],[group[1]]]:[[group[1]],[group[0]]];
@@ -174,7 +220,8 @@ function rankStandings(rows,done,swiss=true){
    return x===y?0:x>y?-1:1;
   };
   groups=split(groups,ratio('setsFor','setsAgainst'));
-  groups=split(groups,ratio('ballFor','ballAgainst'));
+  groups=split(groups,(a,b)=>(b.firstTwoDiff||0)-(a.firstTwoDiff||0));
+  groups=split(groups,(a,b)=>(b.ballFor-b.ballAgainst)-(a.ballFor-a.ballAgainst));
  }
  let place=1;
  return groups.flatMap(group=>{
@@ -183,14 +230,14 @@ function rankStandings(rows,done,swiss=true){
  });
 }
 function standings(state,category){
- const rows=state.entries.filter(e=>e.category===category).map(e=>({entry:e,played:0,wins:0,losses:0,points:0,byes:0,setsFor:0,setsAgainst:0,ballFor:0,ballAgainst:0,buchholz:0,berger:0}));
+ const rows=state.entries.filter(e=>e.category===category).map(e=>({entry:e,played:0,wins:0,losses:0,points:0,byes:0,setsFor:0,setsAgainst:0,ballFor:0,ballAgainst:0,firstTwoDiff:0,buchholz:0,berger:0}));
  const map=new Map(rows.map(r=>[r.entry.id,r]));
- const done=state.matches.filter(m=>m.category===category&&m.status==='done'&&map.has(m.a)&&map.has(m.b)&&validateScores(m.scores).ok);
- for(const m of done){const result=validateScores(m.scores);if(!result.ok)continue;for(let side=0;side<2;side++){const r=map.get(side===0?m.a:m.b);r.played++;r.wins+=result.winner===side?1:0;r.losses+=result.winner!==side?1:0;r.points=r.wins;r.setsFor+=result.wins[side];r.setsAgainst+=result.wins[1-side];for(const game of m.scores){r.ballFor+=game[side];r.ballAgainst+=game[1-side];}}}
+ const done=state.matches.filter(m=>m.category===category&&m.status==='done'&&map.has(m.a)&&map.has(m.b)).map(m=>({...m,result:matchResult(state,m)})).filter(m=>m.result.ok);
+ for(const m of done){const result=m.result;for(let side=0;side<2;side++){const r=map.get(side===0?m.a:m.b);r.played++;r.wins+=result.winner===side?1:0;r.losses+=result.winner!==side?1:0;r.points=r.wins;r.setsFor+=result.wins[side];r.setsAgainst+=result.wins[1-side];for(const [index,game] of m.scores.entries()){r.ballFor+=game[side];r.ballAgainst+=game[1-side];if(index<2)r.firstTwoDiff+=game[side]-game[1-side];}}}
  // A bye grants a point without creating a game, a win or synthetic scores.
  for(const bye of state.byes||[]){const row=map.get(bye.entryId);if(row){row.points++;row.byes++;}}
- for(const m of done){const a=map.get(m.a),b=map.get(m.b),result=validateScores(m.scores);a.buchholz+=b.points;b.buchholz+=a.points;if(result.winner===0)a.berger+=b.points;else b.berger+=a.points;}
- const swiss=rows.length>=7,rounds=state.categories.find(c=>c.id===category)?.rounds||0;
+ for(const m of done){const a=map.get(m.a),b=map.get(m.b),result=m.result;a.buchholz+=b.points;b.buchholz+=a.points;if(result.winner===0)a.berger+=b.points;else b.berger+=a.points;}
+ const swiss=state.categories.find(c=>c.id===category)?.scheme==='swiss'||(!state.categories.find(c=>c.id===category)?.scheme&&rows.length>=7),rounds=state.categories.find(c=>c.id===category)?.rounds||0;
  if(swiss)for(const row of rows){
   // REQUIREMENTS.md §8.5: virtual opponent for an assigned bye, V = min(S,T/2).
   row.byeOpponentPoints=row.byes*Math.min(row.points,rounds/2);
@@ -198,6 +245,6 @@ function standings(state,category){
  }
  return rankStandings(rows,done,swiss);
 }
-const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,restMinutes,queue,queueItems,matchAvailability,entryActivity,entryProgress,courtTiming,restTiming,nextForEntry,normalizeName,playerParts,playerFullName,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings,rankStandings};
+const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,scoreFormats,formatOf,capOf,matchResult,shortScore,restMinutes,queue,queueItems,matchAvailability,entryActivity,entryProgress,courtTiming,restTiming,nextForEntry,normalizeName,playerParts,playerFullName,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings,rankStandings};
 root.SwissCourtCore=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

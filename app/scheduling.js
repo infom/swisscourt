@@ -5,7 +5,7 @@ const T=root.SwissCourtTournament||(typeof require==='function'?require('./tourn
 const pairKey=m=>[m.a,m.b].sort().join('|');
 function plan(state,category){
  if(state.kind!=='tournament'||!state.started||state.closed)return null;
- const entries=T.seeded(state,category);if(entries.length<7)return null;
+ const entries=T.seeded(state,category);if(T.schemeOf(state,category)!=='swiss')return null;
  const status=T.roundStatus(state,category),round=status.partial?status.round:status.round+1;
  if(round>status.totalRounds)return null;
  const base={...state,matches:state.matches.filter(m=>m.category!==category||m.round<round),byes:state.byes.filter(b=>b.category!==category||b.round<round)};
@@ -50,7 +50,7 @@ function apply(state,proposal){
  return state;
 }
 function signature(state){
- return JSON.stringify([state.id,state.started,state.closed,state.entries,state.categories,state.partialRounds,state.byes,state.matches.map(m=>[m.id,m.a,m.b,m.round,m.status==='done'?C.validateScores(m.scores).winner:'pending'])]);
+ return JSON.stringify([state.id,state.started,state.closed,state.entries,state.categories,state.partialRounds,state.byes,state.matches.map(m=>[m.id,m.a,m.b,m.round,m.status==='done'?C.matchResult(state,m).winner:'pending'])]);
 }
 const api={plan,apply,signature};root.SwissCourtScheduling=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

@@ -13,6 +13,7 @@ test('offline worker atomically caches the app, serves cached navigation and nev
  let pending;events.get('install')({waitUntil:p=>pending=p});await pending;
  assert.ok(saved.has('https://swiss.example/tournament.js'));assert.ok(saved.has('https://swiss.example/real-ui.js'));
  assert.ok(saved.has('https://swiss.example/scheduling.js'));assert.ok(saved.has('https://swiss.example/scheduling-worker.js'));
+ for(const asset of ['brackets.js','matching.js','planning.js','planner-ui.js','display-ui.js'])assert.ok(saved.has('https://swiss.example/'+asset));
  events.get('activate')({waitUntil:p=>pending=p});await pending;assert.equal(claimed,true);
  events.get('fetch')({request:{url:'https://swiss.example/?scenario=real#board',method:'GET',mode:'navigate'},respondWith:p=>pending=p});
  assert.deepEqual(await pending,{body:'./index.html'});assert.equal(network,0);

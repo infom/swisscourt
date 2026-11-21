@@ -153,16 +153,16 @@ test('planner accepts a rental duration and starts the clock only when the draw 
  assert.match(ui.html(),/Длительность аренды/);
  assert.doesNotMatch(ui.html(),/data-plan-setting="(?:start|end)"/);
  ui.input('#plan-rental-minutes','2:70');
- assert.match(ui.node('#plan-overview').innerHTML,/Укажите количество кортов/);
+ assert.match(ui.node('#plan-overview').innerHTML,/Укажите число кортов/);
  ui.input('#plan-rental-minutes','2:30');
  ui.click({action:'save-plan'});
  assert.equal(D.decode(ui.storage.get(D.key)).settings.rentalMinutes,150);
- ui.click({action:'draw'});
+ ui.run('view="participants";render()');ui.click({action:'prepare-draw'});ui.click({action:'draw'});
  assert.equal(D.decode(ui.storage.get(D.key)).startedAt,undefined);
  ui.run('gameNow=()=>1800000000000');
  ui.click({action:'publish-draw'});
  assert.equal(D.decode(ui.storage.get(D.key)).startedAt,1800000000000);
- assert.match(ui.html(),/Прошло 0 мин/);
+ assert.match(ui.html(),/Прошло 0:00/);
 });
 test('requested court is assigned directly and score entry keeps manual values and a deciding game',()=>{
  const state=field(2,'circle');T.start(state);
@@ -185,21 +185,185 @@ test('requested court is assigned directly and score entry keeps manual values a
  ui.click({action:'save-score'});
  assert.deepEqual(JSON.parse(ui.storage.get(D.key)).matches[0].scores,[[12,21],[21,14],[21,16]]);
 });
+test('score entry uses the same keyboard path for all straight and deciding results',()=>{
+ for(const losers of [[0,0],[1,1],[0,1,0],[1,0,0],[0,1,1],[1,0,1]]){
+  const state=field(2,'circle');T.start(state);
+  const match=state.matches[0];C.assign(state,match.id,1);
+  const ui=boot({realState:state});ui.click({action:'score',id:match.id});
+  let strokes=0;
+  for(const [game,loser] of losers.entries()){
+   assert.equal(ui.focused(),'#score-'+game+'-0');
+   if(loser===1){assert.equal(ui.press('Enter'),true);strokes++;}
+   assert.equal(ui.focused(),'#score-'+game+'-'+loser);
+   ui.input(ui.focused(),'12');assert.equal(ui.press('Enter'),true);strokes++;
+  }
+  const upperWins=losers.filter(side=>side===1).length;
+  const score=upperWins+':'+(losers.length-upperWins);
+  assert.equal(strokes,{'0:2':2,'2:0':4,'1:2':4,'2:1':5}[score]);
+  assert.equal(ui.focused(),'[data-action="save-score"]');
+  ui.click({action:'save-score'});
+  assert.deepEqual(JSON.parse(ui.storage.get(D.key)).matches[0].scores,losers.map(side=>side===0?[12,21]:[21,12]));
+ }
+});
+test('vertical keys keep focus in the same game and a deuce requires both sides',()=>{
+ const state=field(2,'circle');T.start(state);
+ const match=state.matches[0];C.assign(state,match.id,1);
+ const ui=boot({realState:state});ui.click({action:'score',id:match.id});
+ assert.equal(ui.press('ArrowDown'),true);assert.equal(ui.focused(),'#score-0-1');
+ assert.equal(ui.press('ArrowUp'),true);assert.equal(ui.focused(),'#score-0-0');
+ assert.equal(ui.node('#score-0-0').value,'');assert.equal(ui.node('#score-0-1').value,'');
+ ui.input('#score-0-0','20');ui.press('Enter');assert.equal(ui.focused(),'#score-0-1');
+ ui.input('#score-0-1','21');ui.press('Enter');assert.equal(ui.focused(),'#score-0-1');
+ assert.match(ui.node('#score-error').textContent,/партии 1/);
+ ui.input('#score-0-1','22');ui.press('Enter');assert.equal(ui.focused(),'#score-1-0');
+});
+test('Enter completes scores two below the target in every format, including a decider to 11',()=>{
+ for(const [scoreFormat,format] of Object.entries(C.scoreFormats)){
+  const state=field(2,'circle',{scoreFormat});T.start(state);
+  const match=state.matches[0];C.assign(state,match.id,1);
+  const ui=boot({realState:state});ui.click({action:'score',id:match.id});
+  const losers=scoreFormat==='shortFinal'?[0,1,0]:[0,0];
+  const scores=[];
+  for(const [index,loser] of losers.entries()){
+   const goal=format.targets[index],input='#score-'+index+'-'+loser,opponent='#score-'+index+'-'+(1-loser);
+   assert.equal(ui.focused(),'#score-'+index+'-0');
+   if(loser===1)ui.press('Enter');
+   ui.input(input,goal-2);
+   assert.equal(ui.node(opponent).value,'');
+   assert.equal(ui.press('Enter'),true);
+   assert.equal(ui.node(opponent).value,String(goal));
+   scores.push(loser===0?[goal-2,goal]:[goal,goal-2]);
+  }
+  assert.equal(ui.focused(),'[data-action="save-score"]');
+  ui.click({action:'save-score'});
+  assert.deepEqual(D.decode(ui.storage.get(D.key)).matches[0].scores,scores);
+ }
+});
+test('extended games immediately suggest a legal winning score and respect manual overrides',()=>{
+ const state=field(2,'circle',{scoreFormat:'best15'});T.start(state);
+ const match=state.matches[0];C.assign(state,match.id,1);
+ const ui=boot({realState:state});ui.click({action:'score',id:match.id});
+ const first='#score-0-0',opponent='#score-0-1';
+ for(const [entered,expected] of [[16,'18'],[19,'21'],[20,'21'],[21,''],[22,''],[19,'21'],['','']]){
+  ui.input(first,entered);
+  assert.equal(ui.node(opponent).value,expected);
+  assert.equal(ui.focused(),first);
+ }
+ ui.input(first,16);
+ ui.input(opponent,19);
+ ui.input(first,17);
+ assert.equal(ui.node(opponent).value,'19');
+ assert.equal(ui.press('Enter'),true);
+ assert.equal(ui.focused(),'#score-1-0');
+});
 test('planner saves a preset, publishes the previewed draw and shows all five category panels',()=>{
  const state=groups(12,4,'bronze');
  const ui=boot({realState:state,hash:'#plan'});
- assert.match(ui.html(),/Три сетки с бронзой/);assert.match(ui.html(),/<b>24<\/b> встреч/);
- ui.click({action:'plan-preset',id:'triple',index:'0'});ui.click({action:'save-plan'});
- ui.run('mutate(s=>{s.categories[0].seeding="random";})');ui.click({action:'draw'});
+ assert.match(ui.html(),/Три сетки с бронзой/);assert.match(ui.html(),/<strong>24<\/strong><small>Игр всего/);
+ ui.change({plan:'preset',index:'0'},'triple');ui.click({action:'save-plan'});
+ ui.run('view="participants";render()');ui.click({action:'prepare-draw'});ui.click({action:'draw'});
  const preview=ui.run('JSON.stringify(realDraft.next.drawOrders)');
  ui.click({action:'publish-draw'});assert.equal(ui.run('JSON.stringify(state.drawOrders)'),preview);
  assert.match(ui.html(),/Группы/);
  const saved=D.decode(ui.storage.get(D.key)),board=boot({realState:saved,hash:'#board'});
- assert.match(board.html(),/Группа A/);assert.match(board.html(),/за 1–4-е/i);
- board.click({action:'full-bracket',id:'md'});
- assert.match(board.node('#dialog').innerHTML,/Полуфинал/);
- const five=field(2,'circle');five.categories=structuredClone(T.divisions);
+ assert.match(board.html(),/Группа 1/);assert.match(board.html(),/за 1–4-е/i);
+ assert.match(board.html(),/Шахматка · Группа 1/);assert.doesNotMatch(board.html(),/data-action=|<button/);
+ restoredBracket(saved);
+ const five=field(2,'circle');five.categories=structuredClone(T.divisions.slice(0,5));
  five.entries=five.categories.flatMap(c=>[0,1].map(i=>({id:c.id+i,category:c.id,players:Array.from({length:c.doubles?2:1},(_,j)=>({name:'Имя '+c.id+i+j,rating:1000}))})));
  T.start(five);
  assert.equal((boot({realState:five,hash:'#board'}).html().match(/class="board-division"/g)||[]).length,5);
+});
+function restoredBracket(saved){
+ const organizer=boot({realState:saved,hash:'#standings'});
+ organizer.click({action:'full-bracket',id:'md'});
+ assert.match(organizer.node('#dialog').innerHTML,/Полуфинал за 1-е место/);
+}
+test('group routes apply across uneven groups and standings follow the bracket places',()=>{
+ const state=field(7,'groups',{groupCount:2,routes:[1,1,2,2],playoffs:[{mode:'bronze'},{mode:'single'}]});
+ const category=state.categories[0];
+ assert.deepEqual(B.groupPlayoffs(category,7).map(bracket=>bracket.slots.length),[4,3]);
+ assert.equal(P.estimate(state).count,15);
+ playAll(state);
+ const context=T.bracketContext(state,'md');
+ const rows=T.standings(state,'md');
+ assert.deepEqual(rows.map(row=>row.place),[1,2,3,4,5,6,7]);
+ for(const bracket of context.brackets){
+  for(const p of bracket.places)assert.equal(rows.find(row=>row.entry.id===context.resolve(p.ref)).place,p.place);
+ }
+ const fifth=context.nodes.find(node=>node.forPlace===5&&node.stage==='Финал');
+ const organizer=boot({realState:state,hash:'#standings'});
+ organizer.click({action:'match-details',id:fifth.id});
+ assert.match(organizer.node('#dialog').innerHTML,/Игра за 5-е место/);
+ assert.match(organizer.node('#dialog').innerHTML,/result-winner/);
+ assert.match(organizer.node('#dialog').innerHTML,/result-loser/);
+ assert.doesNotMatch(organizer.node('#dialog').innerHTML,/>Победа:|Тур [0-9]/u);
+});
+test('a free court offers all four known group games even with an earlier game pending',()=>{
+ const state=field(6,'groups',{groupCount:2,routes:[1,0,0],playoffs:[{mode:'single'}]});T.start(state);
+ for(const match of state.matches.filter(match=>match.round===1))play(state,match);
+ const {parse}=require('node-html-parser'),ui=boot({realState:state});
+ const courtDialog=()=>parse(ui.node('#dialog').innerHTML);
+ ui.click({action:'choose-match',court:'3'});
+ assert.equal(courtDialog().querySelectorAll('[data-action="assign-to-court"]').length,4);
+ for(const group of [0,1]){
+  const match=state.matches.find(match=>match.round===3&&match.group===group);
+  ui.click({action:'assign-to-court',id:match.id,court:String(3+group)});
+ }
+ assert.equal(D.decode(ui.storage.get(D.key)).matches.filter(match=>match.status==='playing').length,2);
+ ui.click({action:'choose-match',court:'5'});
+ assert.match(courtDialog().text,/Нет доступных встреч/);
+ assert.doesNotMatch(courtDialog().text,/Ожидает|ФАМИЛИЯ/);
+});
+test('a seven-player bracket keeps the bye in place and connects the final and bronze to their semifinals',()=>{
+ const state=field(7,'knockout',{bracketMode:'bronze'});T.start(state);
+ const {parse}=require('node-html-parser'),ui=boot({realState:state,hash:'#standings'});
+ ui.click({action:'full-bracket',id:'md'});
+ const stages=parse(ui.node('#dialog').innerHTML).querySelectorAll('.bracket-stage');
+ assert.equal(stages.length,3);
+ assert.equal(stages[0].querySelectorAll('.bracket-card').length,4);
+ assert.match(stages[0].querySelector('.bracket-card').text,/Пропуск/);
+ assert.equal(stages[1].querySelectorAll('.bracket-edge').length,4);
+ assert.equal(stages[2].querySelectorAll('.bracket-edge').length,4);
+ assert.equal(stages[2].querySelectorAll('.loser-path').length,2);
+ assert.match(stages[2].text,/Игра за 3-е место/);
+ const board=parse(boot({realState:state,hash:'#board'}).html());
+ assert.equal(board.querySelectorAll('.bracket-stage').length,2);
+ assert.equal(board.querySelectorAll('button').length,0);
+});
+test('two circle legs are counted and played through the same plan, reversing sides',()=>{
+ const state=field(5,'circle',{circles:2});
+ assert.equal(P.estimate(state).count,20);
+ playAll(state);
+ assert.equal(T.roundCount(state,'md'),10);
+ const first=state.matches.filter(match=>match.round<=5);
+ const second=state.matches.filter(match=>match.round>5);
+ assert.equal(second.length,first.length);
+ for(const match of first)assert.ok(second.some(other=>other.a===match.b&&other.b===match.a&&other.round===match.round+5));
+});
+test('seven Swiss rounds keep every result visible on the passive scoreboard',()=>{
+ const state=field(8,'swiss',{rounds:7});
+ playAll(state);
+ assert.equal(state.matches.length,28);
+ assert.equal(new Set(state.matches.map(match=>[match.a,match.b].sort().join('/'))).size,28);
+ const {parse}=require('node-html-parser');
+ const board=parse(boot({realState:state,hash:'#board'}).html());
+ const progress=board.querySelectorAll('.game-progress');
+ assert.equal(progress.length,8);
+ assert.ok(progress.every(row=>row.querySelectorAll('.game-result').length===7));
+});
+test('passive scoreboard has seven court cards, a chess table and the complete short score',()=>{
+ const state=field(4,'circle');T.start(state);
+ const [played,live]=state.matches.filter(match=>match.round===1);
+ play(state,played,[[18,21],[21,19],[24,22]]);
+ C.assign(state,live.id,7);
+ const {parse}=require('node-html-parser');
+ const board=parse(boot({realState:state,hash:'#board'}).html());
+ assert.equal(board.querySelectorAll('.board-court').length,7);
+ assert.equal(board.querySelectorAll('.board-court-pair').length,2);
+ assert.equal(board.querySelector('.board-court-division small').text,'Тур 1');
+ assert.equal(board.querySelector('.board-division-heading .board-division-counts').text,'1 сыграно5 осталось');
+ assert.equal(board.querySelectorAll('.chess-table .game-result.playing').length,2);
+ assert.deepEqual(board.querySelectorAll('.chess-table .game-result.deciding .block-score').map(el=>el.text).sort(),['18;−19;−22','−18;19;22'].sort());
+ assert.equal(board.querySelectorAll('button, [data-action]').length,0);
 });

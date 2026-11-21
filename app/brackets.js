@@ -3,13 +3,27 @@
 const C=root.SwissCourtCore||(typeof require==='function'?require('./core.js'):null);
 const schemes={circle:'Круговая',swiss:'Швейцарская',knockout:'Олимпийка',groups:'Группы + плей-офф'};
 const modes={single:'Навылет',bronze:'Навылет + 3-е место',selected:'За 1-е, 3-е, 5-е и 9-е места',full:'Все места'};
-const letter=group=>String.fromCharCode(65+group);
+const groupNumber=group=>group+1;
 const roundRobinCount=n=>n*(n-1)/2;
 const groupSizes=(n,count)=>Array.from({length:count},(_,i)=>Math.floor(n/count)+(i<n%count?1:0));
+const circleRounds=n=>n-1+n%2;
+function circlePairs(order,round){
+ const rounds=circleRounds(order.length);
+ const pairs=C.roundRobin(order,(round-1)%rounds+1);
+ return round>rounds?pairs.map(([a,b])=>[b,a]):pairs;
+}
+function groupPlayoffs(category,n){
+ if(!category.routes)return category.playoffs;
+ const sizes=groupSizes(n,category.groupCount);
+ return category.playoffs.map((bracket,index)=>({...bracket,slots:sizes.flatMap((size,group)=>
+  Array.from({length:size},(_,place)=>place+1).filter(place=>category.routes[place-1]===index+1).map(place=>({group,place}))) }));
+}
 function validPlan(category,n){
  const {scheme,rounds,groupCount,playoffs,bracketMode,scoreFormat,seeding}=category;
- if(!Object.hasOwn(schemes,scheme)||!Object.hasOwn(C.scoreFormats,scoreFormat)||!['rating','random','manual'].includes(seeding))throw Error('Проверьте схему, формат счёта и посев.');
+ if(!Object.hasOwn(schemes,scheme)||!Object.hasOwn(C.scoreFormats,scoreFormat)||seeding!==undefined&&!['rating','random','manual'].includes(seeding))throw Error('Проверьте схему и формат счёта.');
  if(!Number.isInteger(n)||n<2||n>32)throw Error('Нужно от 2 до 32 участников.');
+ if(scheme==='circle'&&category.circles!==undefined&&![1,2].includes(category.circles))throw Error('Выберите один или два круга.');
+ if(scheme==='swiss'&&![3,4,5,6,7].includes(rounds))throw Error('Выберите от 3 до 7 туров.');
  if(scheme==='swiss'&&rounds>n-1+n%2)throw Error('Для '+rounds+' туров нужно больше участников.');
  if(scheme==='knockout'&&(!Object.hasOwn(modes,bracketMode)||(bracketMode==='bronze'&&n<4)))throw Error('Для матча за 3-е нужно не меньше четырёх участников.');
  if(scheme!=='groups')return;
@@ -18,8 +32,12 @@ function validPlan(category,n){
  const sizes=groupSizes(n,groupCount);
  if(sizes.some(size=>size<2||size>4))throw Error('В каждой группе должно быть от 2 до 4 участников.');
  if(!Array.isArray(playoffs)||playoffs.length<1||playoffs.length>4)throw Error('Выберите от 1 до 4 сеток.');
+ if(category.routes!==undefined){
+  const routes=category.routes;
+  if(!Array.isArray(routes)||routes.length<Math.max(...sizes)||routes.length>4||routes.some(value=>!Number.isInteger(value)||value<0||value>playoffs.length))throw Error('Укажите одно направление для каждого места в группе.');
+ }
  const used=new Set();
- for(const bracket of playoffs){
+ for(const bracket of groupPlayoffs(category,n)){
   if(!Object.hasOwn(modes,bracket.mode)||!Array.isArray(bracket.slots)||bracket.slots.length<2)throw Error('В каждой сетке нужно хотя бы два места из групп.');
   if(bracket.mode==='bronze'&&bracket.slots.length<4)throw Error('Для матча за 3-е нужно не меньше четырёх мест в сетке.');
   for(const {group,place} of bracket.slots){
@@ -47,11 +65,11 @@ function bracketGraph(category,index,refs,mode,baseRound=0,offset=0){
    const a=slots[i],b=slots[i+1];
    if(!a||!b){
     winners.push(a||b);
-    skips.push({ref:a||b,round,forPlace:offset+first});
+    skips.push({ref:a||b,round,forPlace:offset+first,position:i/2});
     continue;
    }
    const id=category+'-b'+index+'-m'+nodes.length;
-   nodes.push({id,category,bracket:index,round,stage:stageLabel(slots.length),forPlace:offset+first,a,b});
+   nodes.push({id,category,bracket:index,round,stage:stageLabel(slots.length),forPlace:offset+first,position:i/2,a,b});
    winners.push({match:id,outcome:'winner'});
    losers.push({match:id,outcome:'loser'});
   }
@@ -105,7 +123,7 @@ function layout(category,order){
  const groups=splitGroups(order,category.groupCount),games=groupMatches(id,groups);
  const baseRound=Math.max(0,...games.map(m=>m.round));
  let offset=0;
- const brackets=category.playoffs.map((bracket,index)=>{
+ const brackets=groupPlayoffs(category,order.length).map((bracket,index)=>{
   const refs=bracketSeeds(bracket.slots,true);
   const result=bracketGraph(id,index,refs,bracket.mode,baseRound,offset);
   offset+=refs.length;
@@ -114,7 +132,7 @@ function layout(category,order){
  return {groups,games,brackets};
 }
 function matchCount(category,n){
- if(category.scheme==='circle')return roundRobinCount(n);
+ if(category.scheme==='circle')return roundRobinCount(n)*(category.circles||1);
  if(category.scheme==='swiss')return Math.floor(n/2)*category.rounds;
  const structure=layout(category,Array.from({length:n},(_,i)=>'p'+i));
  return structure.games.length+structure.brackets.reduce((sum,bracket)=>sum+bracket.nodes.length,0);
@@ -143,6 +161,6 @@ function context(state,category,groupRank){
  })];
  return {...structure,nodes,matches,leads,resolve,expected};
 }
-const api={schemes,modes,letter,groupSizes,validPlan,layout,matchCount,context};
+const api={schemes,modes,groupNumber,groupSizes,groupPlayoffs,circleRounds,circlePairs,validPlan,layout,matchCount,context};
 root.SwissCourtBrackets=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

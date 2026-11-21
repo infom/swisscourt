@@ -14,7 +14,10 @@ function roundRobin(ids,round=1){
  const pairs=[];for(let i=0;i<list.length/2;i++){const a=list[i],b=list[list.length-1-i];if(a&&b)pairs.push([a,b]);}return pairs;
 }
 function firstPairs(entries){const sorted=entries.slice().sort((a,b)=>rating(b)-rating(a));if(sorted.length<7)return roundRobin(sorted.map(e=>e.id));const out=[];const half=Math.floor(sorted.length/2);for(let i=0;i<half;i++)out.push([sorted[i].id,sorted[i+half].id]);return out;}
-function rating(entry){return entry.players.reduce((sum,p)=>sum+Number(p.rating),0)/entry.players.length;}
+function rating(entry){
+ const known=entry.players.filter(player=>player.rating!=null);
+ return known.length?known.reduce((sum,player)=>sum+Number(player.rating),0)/known.length:0;
+}
 function seed(mode='live',now=Date.now()){
  const state={version:1,started:mode==='live',settings:{title:'Клубная лига · MD / WD',venue:'Бадминтонный центр «Волан»',date:'2026-11-12',start:'10:00',end:'16:00',courts:7,level:'Любительский дивизион',prepareCount:4},categories:JSON.parse(JSON.stringify(categories)),entries:[],matches:[],history:[]};
  for(const cat of categories)names[cat.id].forEach((players,i)=>state.entries.push({id:cat.id+(i+1),category:cat.id,players:players.map((name,j)=>({name,rating:1800-i*43-j*71}))}));
@@ -91,7 +94,7 @@ function matchAvailability(state,match){
   const players=sharedPlayers(state,[match.a,match.b],[active.a,active.b]);
   if(players.length)blockers.push({type:'busy',court:active.court,matchId:active.id,players});
  }
- const earlier=state.matches.filter(m=>m.category===match.category&&m.round<match.round&&m.status!=='done'&&(!real||same(m)));
+ const earlier=match.group===undefined?state.matches.filter(m=>m.category===match.category&&m.round<match.round&&m.status!=='done'&&(!real||same(m))):[];
  if(earlier.length){const round=Math.min(...earlier.map(m=>m.round));blockers.push({type:'round',round,remaining:earlier.filter(m=>m.round===round).length});}
  return {available:match.status==='queued'&&blockers.length===0,blockers};
 }
@@ -154,7 +157,7 @@ function queue(state,now=Date.now()){
  return state.matches.filter(m=>m.status==='queued'&&matchAvailability(state,m).available).map(match=>{
   const rest=restMinutes(state,match,now);
   return {match,short:rest!==null&&rest<15?1:0};
- }).sort((a,b)=>a.short-b.short).map(row=>row.match);
+ }).sort((a,b)=>a.short-b.short||a.match.round-b.match.round).map(row=>row.match);
 }
 function queueItems(state,now=Date.now()){
  const ready=queue(state,now);

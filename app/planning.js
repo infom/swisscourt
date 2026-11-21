@@ -21,7 +21,8 @@ function realStart(state,now){
 
 function tasksFor(state,cat,n){
  const ranked=T.seeded(state,cat.id);
- const order=state.drawOrders?.[cat.id]||Array.from({length:n},(_,index)=>ranked[index]?.id||cat.id+'-p'+index);
+ const saved=state.drawOrders?.[cat.id]||T.preparedOrder(state,cat.id);
+ const order=saved?.length===n?saved:Array.from({length:n},(_,index)=>ranked[index]?.id||cat.id+'-p'+index);
  const actual=state.matches.filter(m=>m.category===cat.id);
  const matches=new Map(actual.map(m=>[m.id,m]));
  const task=m=>({...m,...matches.get(m.id),after:[]});
@@ -51,13 +52,13 @@ function tasksFor(state,cat,n){
   return rows;
  }
  const rows=[];
- const rounds=cat.scheme==='swiss'?cat.rounds:n-1+n%2;
+ const rounds=cat.scheme==='swiss'?cat.rounds:B.circleRounds(n)*(cat.circles||1);
  for(let round=1;round<=rounds;round++){
   const known=actual.filter(m=>m.round===round);
   const busy=new Set(known.flatMap(m=>[m.a,m.b]));
   const remaining=order.filter(id=>!busy.has(id));
   if(rounds===0)break;
-  const slots=cat.scheme==='circle'&&!known.length?C.roundRobin(order,round):
+  const slots=cat.scheme==='circle'&&!known.length?B.circlePairs(order,round):
    C.roundRobin(remaining,1);
   const previous=rows.filter(m=>m.round===round-1).map(m=>m.id);
   rows.push(...known.map(task),...slots.map(([a,b],i)=>({

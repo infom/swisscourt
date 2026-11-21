@@ -8,8 +8,11 @@ const divisions=[
  {id:'ws',code:'WS',name:'Женский одиночный',short:'Женщины',doubles:false,rounds:5},
  {id:'md',code:'MD',name:'Мужской парный',short:'Мужские пары',doubles:true,rounds:5},
  {id:'wd',code:'WD',name:'Женский парный',short:'Женские пары',doubles:true,rounds:5},
- {id:'xd',code:'XD',name:'Смешанный парный',short:'Микст',doubles:true,rounds:5}
+ {id:'xd',code:'XD',name:'Смешанный парный',short:'Микст',doubles:true,rounds:5},
+ {id:'s',code:'S',name:'Одиночный',short:'Одиночный',doubles:false,rounds:5},
+ {id:'d',code:'D',name:'Парный',short:'Парный',doubles:true,rounds:5}
 ];
+const seedModes={all:'Все',four:'1, 2, 3–4',eight:'1, 2, 3–4, 5–8'};
 const fail=message=>{throw Error(message);};
 const key=(a,b)=>[a,b].sort().join('|');
 const safeId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(value);
@@ -44,7 +47,7 @@ function validate(state,{ready=false}={}){
  if(!Array.isArray(state.categories)||state.categories.length<1||state.categories.length>5||new Set(state.categories.map(c=>c.id)).size!==state.categories.length)fail('Выберите от одной до пяти категорий.');
  for(const cat of state.categories){
   const known=divisions.find(c=>c.id===(cat.division||cat.id));
-  if(!known||!safeId(cat.id)||cat.code!==known.code||cat.doubles!==known.doubles||![3,4,5,6].includes(cat.rounds)||typeof cat.name!=='string'||cat.name.length>100)fail('Проверьте параметры категорий.');
+  if(!known||!safeId(cat.id)||cat.code!==known.code||cat.doubles!==known.doubles||![3,4,5,6,7].includes(cat.rounds)||typeof cat.name!=='string'||cat.name.length>100)fail('Проверьте параметры категорий.');
   if(cat.scheme)B.validPlan(cat,cat.planned);
  }
  if(!Array.isArray(state.entries)||!Array.isArray(state.matches)||!Array.isArray(state.byes)||!Array.isArray(state.history))fail('Повреждены данные турнира.');
@@ -59,8 +62,7 @@ function validate(state,{ready=false}={}){
    const identity=p.sourceId?'source:'+p.sourceId:C.normalizeName(p.name);
    const name=C.normalizeName(p.name);
    if(players.has(identity)||players.has(name))fail('Игрок '+C.playerFullName(p)+' уже есть в игровом дне.');players.add(identity);players.add(name);
-   if(p.rating!==null&&(!Number.isFinite(p.rating)||p.rating<0||p.rating>99999))fail('Рейтинг должен быть числом от 0 до 99999.');
-   if((ready||state.started)&&p.rating===null)fail('Заполните рейтинг: '+C.playerFullName(p)+'.');
+   if(p.rating!=null&&(!Number.isFinite(p.rating)||p.rating<0||p.rating>99999))fail('Рейтинг должен быть числом от 0 до 99999.');
    for(const part of ['surname','givenName','sourceId'])if(p[part]!==undefined&&(typeof p[part]!=='string'||p[part].length>200))fail('Неверные данные игрока.');
   }
  }
@@ -74,7 +76,8 @@ function validate(state,{ready=false}={}){
  for(const m of state.matches){
   if(!safeId(m.id)||typeof m.pinned!=='boolean'||seenIds.has(m.id)||!ids.has(m.a)||!ids.has(m.b)||m.a===m.b||!Number.isInteger(m.round)||m.round<1||!['queued','playing','done'].includes(m.status))fail('Повреждена встреча.');seenIds.add(m.id);
   if([m.a,m.b].some(eid=>state.entries.find(e=>e.id===eid).category!==m.category))fail('Встреча смешивает разряды.');
-  const pair=key(m.a,m.b);
+  const type=schemeOf(state,m.category),leg=type==='circle'?Math.floor((m.round-1)/B.circleRounds(state.entries.filter(e=>e.category===m.category).length)):0;
+  const pair=key(m.a,m.b)+':'+leg;
   if(!isBracket(state,m.category)||m.bracket===undefined){if(seenPairs.has(pair))fail('Повторные соперники в основных турах.');seenPairs.add(pair);}
   for(const eid of [m.a,m.b]){const rk=eid+':'+m.round;if(seenRounds.has(rk))fail('Две встречи участника в одном туре.');seenRounds.add(rk);}
   if(m.status==='playing'){
@@ -121,7 +124,7 @@ function isBracket(state,category){return ['knockout','groups'].includes(schemeO
 function roundCount(state,category){
  const n=state.entries.filter(e=>e.category===category).length,cat=state.categories.find(c=>c.id===category);
  if(isBracket(state,category)&&state.started)return Math.max(...bracketContext(state,category).nodes.map(node=>node.round));
- return schemeOf(state,category)==='circle'?n-1+n%2:cat.rounds;
+ return schemeOf(state,category)==='circle'?B.circleRounds(n)*(cat.circles||1):cat.rounds;
 }
 function roundStatus(state,category){
  const matches=state.matches.filter(m=>m.category===category),partial=(state.partialRounds||[]).find(p=>p.category===category);
@@ -142,9 +145,70 @@ function shuffle(items){
  }
  return items;
 }
+function seedLabels(state,category){
+ const mode=state.seedPlans?.[category];
+ const ranked=seeded(state,category).map(e=>e.id);
+ if(!Object.hasOwn(seedModes,mode))return new Map();
+ if(mode==='all')return new Map(ranked.map((id,index)=>[id,String(index+1)]));
+ const labels=['1','2','3–4','3–4','5–8','5–8','5–8','5–8'];
+ return new Map(ranked.slice(0,mode==='four'?4:8).map((id,index)=>[id,labels[index]]));
+}
+function drawFingerprint(state,category){
+ const c=state.categories.find(cat=>cat.id===category);
+ return JSON.stringify([schemeOf(state,category),c?.division||c?.code,c?.circles,c?.rounds,c?.groupCount,c?.playoffs,c?.routes,c?.bracketMode,state.seedPlans?.[category],
+  state.entries.filter(e=>e.category===category).map(e=>[e.id,e.players.map(p=>[p.name,p.rating])])]);
+}
+function preparedOrder(state,category){
+ const draw=state.preparedDraws?.[category];
+ if(!draw||draw.fingerprint!==drawFingerprint(state,category)||!Array.isArray(draw.order))return null;
+ const roster=state.entries.filter(e=>e.category===category).map(e=>e.id);
+ return draw.order.length===roster.length&&new Set(draw.order).size===roster.length&&draw.order.every(id=>roster.includes(id))?draw.order:null;
+}
+function clearDraw(state,category){
+ if(state.started)fail('Турнир уже начался.');
+ if(state.preparedDraws)delete state.preparedDraws[category];
+}
+function setSeedMode(state,category,mode){
+ if(mode&&!Object.hasOwn(seedModes,mode))fail('Выберите вариант посева.');
+ clearDraw(state,category);
+ state.seedPlans??={};
+ if(mode)state.seedPlans[category]=mode;else delete state.seedPlans[category];
+}
+function prepareDraw(state,category){
+ if(state.started)fail('Турнир уже начался.');
+ const c=state.categories.find(cat=>cat.id===category),ranked=seeded(state,category).map(e=>e.id);
+ if(ranked.length<2)fail('Добавьте не меньше двух участников.');
+ if(c.scheme)B.validPlan(c,ranked.length);
+ const labels=seedLabels(state,category),previous=preparedOrder(state,category);
+ const unseeded=shuffle(ranked.filter(id=>!labels.has(id)));
+ let order;
+ if(previous)order=previous.map(id=>labels.has(id)?id:unseeded.shift());
+ else {
+  const bands=new Map();
+  for(const [id,label] of labels){
+   if(!bands.has(label))bands.set(label,[]);
+   bands.get(label).push(id);
+  }
+  order=[...Array.from(bands.values()).flatMap(shuffle),...unseeded];
+ }
+ state.preparedDraws??={};
+ state.preparedDraws[category]={fingerprint:drawFingerprint(state,category),order};
+ return order;
+}
+function swapDraw(state,category,a,b){
+ if(state.started)fail('Турнир уже начался.');
+ const order=preparedOrder(state,category),first=order?.indexOf(a),second=order?.indexOf(b);
+ if(!order||first<0||second<0)fail('Проверьте жеребьёвку.');
+ [order[first],order[second]]=[order[second],order[first]];
+}
+function pruneDraws(state){
+ if(state.started)return;
+ for(const category of Object.keys(state.preparedDraws||{}))if(!preparedOrder(state,category))delete state.preparedDraws[category];
+ for(const category of Object.keys(state.seedPlans||{}))if(!state.categories.some(c=>c.id===category))delete state.seedPlans[category];
+}
 function drawOrder(state,category){
  const cat=state.categories.find(c=>c.id===category),ranked=seeded(state,category).map(e=>e.id);
- const order=state.drawOrders?.[category]||(cat.seeding==='manual'?cat.manualOrder:cat.seeding==='random'?shuffle(ranked.slice()):ranked);
+ const order=state.drawOrders?.[category]||preparedOrder(state,category)||(cat.seeding==='manual'?cat.manualOrder:cat.seeding==='random'?shuffle(ranked.slice()):ranked);
  if(!Array.isArray(order)||order.length!==ranked.length||new Set(order).size!==ranked.length||order.some(id=>!ranked.includes(id)))fail('Проверьте ручной посев категории '+cat.name+'.');
  return order;
 }
@@ -173,7 +237,7 @@ function validateBracket(state,category,matches){
  for(const match of matches){
   const node=expected.get(match.id);
   if(!node||['a','b','round','group','bracket','stage','forPlace'].some(key=>node[key]!==match[key]))fail('Соперники в уже начавшейся сетке изменились.');
-  if(match.status!=='queued'&&matches.some(m=>m.round<match.round&&m.status!=='done'&&[m.a,m.b].some(id=>id===match.a||id===match.b)))fail('Пара ещё не завершила свою предыдущую встречу.');
+  if(match.group===undefined&&match.status!=='queued'&&matches.some(m=>m.round<match.round&&m.status!=='done'&&[m.a,m.b].some(id=>id===match.a||id===match.b)))fail('Пара ещё не завершила свою предыдущую встречу.');
  }
 }
 function refreshBracket(state,category){
@@ -207,7 +271,7 @@ function* perfectPairs(vertices,allowed){
 }
 function swissContinuation(state,category,round,ids,locked){
  const later=roundCount(state,category)-round;
- if(later===0||ids.length>10)return ()=>true;
+ if(later===0||ids.length+ids.length%2>=2*roundCount(state,category))return ()=>true;
  const players=ids.length%2?[...ids,null]:ids;
  const positions=new Map(players.map((id,index)=>[id,index]));
  const vertices=players.map((_,index)=>index);
@@ -293,7 +357,7 @@ function draw(state,category,round,options={}){
  const entries=drawOrder(state,category),swiss=schemeOf(state,category)==='swiss';
  if(entries.length<2)fail('В разряде недостаточно участников.');
  if(round>roundCount(state,category))fail('Все туры уже сформированы.');
- const pairs=swiss?swissPairs(state,category,round,options):{pairs:C.roundRobin(entries,round),bye:null};
+ const pairs=swiss?swissPairs(state,category,round,options):{pairs:B.circlePairs(entries,round),bye:null};
  const points=options.points||new Map(C.standings(state,category).map(r=>[r.entry.id,r.points]));
  return {category,round,matches:pairs.pairs.map(([a,b],i)=>({id:category+'-'+round+'-'+i,category,round,a,b,status:'queued',pinned:false,floatA:Math.sign(points.get(a)-points.get(b)),floatB:Math.sign(points.get(b)-points.get(a))})),
   bye:pairs.bye?{id:'bye-'+category+'-'+round,entryId:pairs.bye,category,round}:null};
@@ -375,7 +439,25 @@ function circleStandings(state,category){
   place+=group.length;return group;
  });
 }
-function standings(state,category){return schemeOf(state,category)!=='swiss'?circleStandings(state,category):C.standings(state,category);}
-const api={divisions,newDay,parseRentalDuration,rentalDuration,validate,schemeOf,isBracket,bracketContext,groupStandings,totalMatches,seeded,roundCount,roundStatus,draw,publish,start,redraw,finish,standings};
+function standings(state,category){
+ const scheme=schemeOf(state,category);
+ if(scheme==='swiss')return C.standings(state,category);
+ if(!state.started||!isBracket(state,category))return circleStandings(state,category);
+ const context=bracketContext(state,category),placements=new Map(),advancing=new Set();
+ for(const bracket of context.brackets){
+  for(const p of bracket.places){const id=context.resolve(p.ref);if(id)placements.set(id,p);}
+  for(const node of bracket.nodes)for(const slot of [node.a,node.b]){const id=context.resolve(slot);if(id)advancing.add(id);}
+ }
+ const omitted=new Set(context.leads.flatMap(group=>group||[]).filter(id=>!advancing.has(id)&&!placements.has(id)));
+ const nextPlace=context.brackets.at(-1).last+1;
+ const rows=C.standings(state,category);
+ for(const row of rows){
+  const placement=placements.get(row.entry.id);
+  row.tied=placement?.tied||(omitted.has(row.entry.id)&&omitted.size>1);
+  row.place=placement?.place??(omitted.has(row.entry.id)?nextPlace:null);
+ }
+ return rows.sort((a,b)=>(a.place??Infinity)-(b.place??Infinity));
+}
+const api={divisions,seedModes,newDay,parseRentalDuration,rentalDuration,validate,schemeOf,isBracket,bracketContext,groupStandings,totalMatches,seeded,seedLabels,preparedOrder,prepareDraw,setSeedMode,clearDraw,swapDraw,pruneDraws,drawOrder,roundCount,roundStatus,draw,publish,start,redraw,finish,standings};
 root.SwissCourtTournament=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

@@ -11,7 +11,7 @@ function read(storage){
 function commit(storage,next,expected){
  const previous=storage.getItem(key),current=previous?decode(previous):null;
  if(current&&(current.id!==expected.id||current.revision!==expected.revision))throw Error('День изменён в другой вкладке. Обновите страницу перед продолжением.');
- const saved=structuredClone(next);saved.revision=(current?.revision??expected.revision)+1;T.validate(saved);
+ const saved=structuredClone(next);saved.revision=(current?.revision??expected.revision)+1;T.pruneDraws(saved);T.validate(saved);
  const raw=JSON.stringify(saved);
  if(previous)storage.setItem(backupKey,previous);
  storage.setItem(key,raw);

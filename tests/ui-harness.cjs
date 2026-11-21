@@ -9,7 +9,7 @@ const S=require('../app/simulation.js');
 const legacyDay=require('../prototype/fixtures/legacy-day.cjs');
 const B=require('../app/brackets.js'),P=require('../app/planning.js');
 const T=require('../app/tournament.js'),D=require('../app/storage.js'),A=require('../app/scheduling.js');
-const script=['app.js','planner-ui.js','display-ui.js','real-ui.js'].map(file=>fs.readFileSync(path.join(__dirname,'../app',file),'utf8')).join('\n');
+const script=['app.js','planner-ui.js','display-ui.js','roster-ui.js','real-ui.js'].map(file=>fs.readFileSync(path.join(__dirname,'../app',file),'utf8')).join('\n');
 
 function boot({hash='',search='',savedState,legacyState,simulationControl,realState,lock=true,workerClass}={}){
  const nodes=new Map(),listeners=new Map(),intervals=[],downloads=[];
@@ -47,7 +47,9 @@ function boot({hash='',search='',savedState,legacyState,simulationControl,realSt
  return {run:code=>vm.runInContext(code,context),html:()=>node('#app').innerHTML,node,storage,intervals,downloads,
   focused:()=>focused,
   input(id,value){const target=node(id);target.value=String(value);for(const fn of listeners.get('input')||[])fn({target});},
-  enter(id){for(const fn of listeners.get('keydown')||[])fn({key:'Enter',target:node(id),preventDefault(){}});},
+  change(dataset,value){const target={dataset,value,classList:{contains:()=>false}};for(const fn of listeners.get('change')||[])fn({target});},
+  press(key,id=focused){let handled=false;for(const fn of listeners.get('keydown')||[])fn({key,target:node(id),preventDefault(){handled=true;}});return handled;},
+  enter(id){return this.press('Enter',id);},
   click(dataset){const target={dataset};target.closest=()=>target;for(const fn of listeners.get('click')||[])fn({target});}};
 }
 

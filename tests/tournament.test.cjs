@@ -18,6 +18,32 @@ test('new real day has no fictional participants and is separate from demos',()=
  const s=T.newDay();assert.equal(s.started,false);assert.equal(s.entries.length,0);assert.equal(s.matches.length,0);assert.equal(s.settings.courts,7);
  assert.throws(()=>T.start(s),/двух/);assert.notEqual(D.key,'swisscourt-ui-md-wd-7-v1-live');
 });
+test('seed bands are drawn once and later draws preserve all seeded seats, including swaps',()=>{
+ const s=day({md:12});
+ s.entries[0].players[1].rating=null;
+ s.entries[10].players.forEach(player=>delete player.rating);
+ assert.equal(C.rating(s.entries[0]),1800);
+ assert.equal(C.rating(s.entries[1]),1746.5);
+ assert.equal(C.rating(s.entries[10]),0);
+ T.setSeedMode(s,'md','eight');
+ const labels=T.seedLabels(s,'md');
+ assert.deepEqual([...labels.values()],['1','2','3–4','3–4','5–8','5–8','5–8','5–8']);
+ const first=T.prepareDraw(s,'md');
+ assert.deepEqual(first.slice(0,8).map(id=>labels.get(id)),[...labels.values()]);
+ T.swapDraw(s,'md',first[0],first.at(-1));
+ const swapped=[...T.preparedOrder(s,'md')];
+ const later=T.prepareDraw(s,'md');
+ for(let i=0;i<swapped.length;i++)if(labels.has(swapped[i]))assert.equal(later[i],swapped[i]);
+ assert.deepEqual([...later].sort(),[...first].sort());
+ const restored=D.decode(JSON.stringify(s));
+ T.clearDraw(restored,'md');
+ assert.equal(T.preparedOrder(restored,'md'),null);
+ assert.deepEqual(T.seedLabels(restored,'md'),labels);
+ assert.deepEqual(restored.entries,s.entries);
+ s.entries[0].players[0].rating=1700;
+ T.pruneDraws(s);
+ assert.deepEqual(s.preparedDraws,{});
+});
 test('full Swiss tournaments 7–18 entrants complete five rounds without repetitions or duplicate byes',()=>{
  for(const n of [7,8,9,10,11,12,15,18])for(const seed of [17,123,555]){
   const s=day({md:n});T.start(s);
@@ -67,8 +93,9 @@ test('circle equality uses personal wins and differences, all-match differences,
  for(const e of s.entries)e.players.forEach(p=>p.rating=1000);for(const m of s.matches)m.scores=wins.has(m.a+'/'+m.b)?[[21,15],[21,15]]:[[15,21],[15,21]];
  assert.ok(T.standings(s,'md').every(r=>r.place===1&&r.tied));
 });
-test('validation rejects incomplete ratings, duplicate players, invalid results and court collisions',()=>{
- const s=day();s.entries[0].players[0].rating=null;T.validate(s);assert.throws(()=>T.start(s),/рейтинг/);
+test('validation allows missing ratings and rejects duplicate players, invalid results and court collisions',()=>{
+ const unrated=day();unrated.entries[0].players[0].rating=null;T.start(unrated);
+ const s=day();s.entries[0].players[0].rating=-1;assert.throws(()=>T.validate(s),/Рейтинг/);
  s.entries[0].players[0].rating=0;s.entries[1].players[0].name=s.entries[0].players[0].name;assert.throws(()=>T.validate(s),/уже есть/);
  const active=day();T.start(active);const [a,b]=active.matches;a.status=b.status='playing';a.court=b.court=1;a.startedAt=b.startedAt=1;assert.throws(()=>T.validate(active),/корта/);
 });

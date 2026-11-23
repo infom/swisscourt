@@ -49,7 +49,6 @@ function validate(state,{ready=false}={}){
  for(const cat of state.categories){
   const known=divisions.find(c=>c.id===(cat.division||cat.id));
   if(!known||!safeId(cat.id)||cat.code!==known.code||cat.doubles!==known.doubles||![3,4,5,6,7].includes(cat.rounds)||typeof cat.name!=='string'||cat.name.length>100)fail('Проверьте параметры категорий.');
-  if(cat.scoreFormat!==undefined&&!Object.hasOwn(C.scoreFormats,cat.scoreFormat))fail('Проверьте формат счёта.');
   if(cat.scheme){
    if(!state.started||cat.scheme!=='swiss')B.validPlan(cat,cat.planned);
    else if(!Number.isInteger(cat.planned)||cat.planned<2||cat.planned>32)fail('Нужно от 2 до 32 участников по плану.');
@@ -74,7 +73,7 @@ function validate(state,{ready=false}={}){
  for(const cat of state.categories){
   const n=state.entries.filter(e=>e.category===cat.id).length;
   if(n>32)fail(cat.name+': максимум 32 участника.');
-  if(C.scoreFormats[cat.scoreFormat]?.allowsDraw&&schemeOf(state,cat.id)!=='swiss')fail('Формат с ничьей доступен в швейцарской схеме.');
+  if(!cat.scheme&&cat.scoreFormat!==undefined)B.validateScoreFormat(schemeOf(state,cat.id),cat.scoreFormat);
   if((ready||state.started)&&n<2)fail(cat.code+': нужно не меньше двух участников / пар.');
   if(cat.scheme&&(ready||state.started))B.validPlan(cat,n);
  }
@@ -90,7 +89,10 @@ function validate(state,{ready=false}={}){
    if(!Number.isInteger(m.court)||m.court<1||m.court>s.courts||occupied.has(m.court)||!Number.isFinite(m.startedAt))fail('Конфликт или неверный номер корта.');occupied.add(m.court);
    for(const eid of [m.a,m.b]){if(active.has(eid))fail('Игрок уже на другом корте.');active.add(eid);}
   }
-  if(m.scoreFormat!==undefined&&(m.status!=='done'||!Object.hasOwn(C.scoreFormats,m.scoreFormat)||C.scoreFormats[m.scoreFormat].allowsDraw&&type!=='swiss'))fail('Неверный формат счёта встречи.');
+  if(m.scoreFormat!==undefined){
+   if(m.status!=='done')fail('Неверный формат счёта встречи.');
+   B.validateScoreFormat(type,m.scoreFormat);
+  }
   if(m.playedCourt!==undefined&&(m.status!=='done'||!Number.isInteger(m.playedCourt)||m.playedCourt<1||m.playedCourt>32))fail('Неверный номер корта сыгранной встречи.');
   if(m.status==='done'&&(!Array.isArray(m.scores)||m.scores.some(g=>!Array.isArray(g)||g.length!==2||g.some(v=>!Number.isInteger(v)))||!C.matchResult(state,m).ok||!Number.isFinite(m.endedAt)))fail('Неверный результат встречи.');
  }
@@ -141,8 +143,7 @@ function updateLiveCategory(state,id,field,value){
  const category=state.categories.find(c=>c.id===id);
  if(!category||!state.started||state.closed)fail('Параметры категории сейчас недоступны.');
  if(field==='scoreFormat'){
-  if(!Object.hasOwn(C.scoreFormats,value))fail('Проверьте формат счёта.');
-  if(C.scoreFormats[value].allowsDraw&&schemeOf(state,id)!=='swiss')fail('Формат с ничьей доступен в швейцарской схеме.');
+  B.validateScoreFormat(schemeOf(state,id),value);
   const previous=category.scoreFormat||'classic';
   if(previous===value)return;
   for(const match of state.matches)if(match.category===id&&match.status==='done')match.scoreFormat??=previous;
@@ -478,7 +479,7 @@ function circleStandings(state,category){
    row.personalPoints=0;row.personalSets=0;row.personalBalls=0;
    for(const m of done.filter(m=>ids.has(m.a)&&ids.has(m.b)&&[m.a,m.b].includes(row.entry.id))){
     const side=m.a===row.entry.id?0:1,result=C.matchResult(state,m);
-    row.personalPoints+=result.winner===side?1:0;row.personalSets+=result.wins[side]-result.wins[1-side];
+    row.personalPoints+=C.matchPoints(result,side);row.personalSets+=result.wins[side]-result.wins[1-side];
     row.personalBalls+=m.scores.reduce((sum,g)=>sum+g[side]-g[1-side],0);
    }
    row.circleCriteria=[row.personalPoints,row.personalSets,row.personalBalls,row.setsFor-row.setsAgainst,row.ballFor-row.ballAgainst,-C.rating(row.entry)];

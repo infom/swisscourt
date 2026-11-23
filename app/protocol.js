@@ -8,7 +8,7 @@ function timestamp(value){
  return Number.isFinite(value)&&Number.isFinite(date.getTime())?date.toISOString():null;
 }
 
-function scoreboard(rows,swiss){
+function scoreboard(rows,swiss,drawRules=false){
  return rows.map(row=>({
   participantId:row.entry.id,place:row.place,sharedPlace:!!row.tied,played:row.played,points:row.points,
   wins:row.wins,draws:row.draws,losses:row.losses,byes:row.byes,
@@ -16,7 +16,8 @@ function scoreboard(rows,swiss){
   ...(swiss?{buchholz:row.buchholz,berger:row.berger,byeOpponentPoints:row.byeOpponentPoints}:{}),
   ...(row.headToHead?{personalWinnerId:row.headToHead}:{}),
   ...(row.headToHeadGames!==undefined?{personalGameDifference:row.headToHeadGames,personalRallyDifference:row.headToHeadRallies}:{}),
-  ...(row.personalPoints!==undefined?{personalWins:row.personalPoints,personalGameDifference:row.personalSets,personalRallyDifference:row.personalBalls}:{}),
+  ...(row.personalPoints!==undefined?{[drawRules?'personalPoints':'personalWins']:row.personalPoints,
+   personalGameDifference:row.personalSets,personalRallyDifference:row.personalBalls}:{}),
   ...(row.qualificationLot?{qualificationByLot:true}:{})
  }));
 }
@@ -46,7 +47,7 @@ function categoryData(state,category){
   participants:state.entries.filter(entry=>entry.category===id).map(entry=>({id:entry.id,rating:C.rating(entry),
    players:entry.players.map(player=>({name:C.playerFullName(player),rating:player.rating??null}))})),
   drawOrder:T.drawOrder(state,id).slice(),
-  standings:scoreboard(T.standings(state,id),scheme==='swiss'),
+  standings:scoreboard(T.standings(state,id),scheme==='swiss',C.usesDrawRules(state,id)),
   matches:state.matches.filter(match=>match.category===id&&match.status==='done').slice()
    .sort((a,b)=>a.round-b.round||a.endedAt-b.endedAt).map(match=>matchData(state,match,format)),
   byes:state.byes.filter(bye=>bye.category===id).map(({id,entryId,round})=>({id,participantId:entryId,round,points:1})),

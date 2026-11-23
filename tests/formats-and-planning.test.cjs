@@ -24,7 +24,7 @@ test('Swiss 2×15 awards half a point to both sides and ranks complete personal 
  assert.equal(C.validateScores([[15,12],[15,13]],{format}).winner,0);
  assert.equal(C.validateScores([[15,12]],{format}).ok,false);
  assert.equal(C.validateScores(draw,{format:C.scoreFormats.two15}).winner,1);
- assert.throws(()=>T.start(field(2,'circle',{scoreFormat:'two15Draw'})),/доступен в швейцарской/);
+ assert.throws(()=>T.start(field(2,'knockout',{scoreFormat:'two15Draw'})),/доступен в круговой и швейцарской/);
  const candidates=()=>['a','b','c'].map((id,i)=>({entry:{id},points:2,buchholz:i,berger:i}));
  const meeting=(a,b,scores)=>({a,b,scores,result:C.validateScores(scores,{format})});
  const games=[meeting('a','b',[[15,13],[15,13]]),meeting('a','c',[[15,13],[0,15]]),meeting('b','c',draw)];
@@ -58,6 +58,9 @@ test('the draw format is selectable in Swiss planning and renders a yellow resul
  prepare.change({plan:'scoreFormat',index:'0'},'two15Draw');
  const configured=D.decode(prepare.storage.get(D.key));
  prepare.change({plan:'scheme',index:'0'},'circle');
+ assert.equal(D.decode(prepare.storage.get(D.key)).categories[0].scoreFormat,'two15Draw');
+ assert.ok(parse(prepare.html()).querySelector('[data-plan="scoreFormat"] option[value="two15Draw"]'));
+ prepare.change({plan:'scheme',index:'0'},'knockout');
  assert.equal(D.decode(prepare.storage.get(D.key)).categories[0].scoreFormat,'two15');
  assert.equal(parse(prepare.html()).querySelector('[data-plan="scoreFormat"] option[value="two15Draw"]'),null);
  T.start(configured);
@@ -85,6 +88,29 @@ test('the draw format is selectable in Swiss planning and renders a yellow resul
  const updated=structuredClone(saved);T.updateLiveCategory(updated,'md','scoreFormat','best15');
  assert.equal(C.matchResult(updated,updated.matches[0]).winner,null);
  assert.equal(T.standings(updated,'md').find(r=>r.entry.id===m.a).points,0.5);
+});
+test('circle draws score half in personal meetings and appear on the chessboard and exported protocol',async()=>{
+ const s=field(2,'circle',{scoreFormat:'two15'}),{parse}=require('node-html-parser');
+ T.start(s);
+ const ui=boot({realState:s,hash:'#tournament'});
+ ui.change({plan:'scoreFormat',index:'0'},'two15Draw');
+ const configured=D.decode(ui.storage.get(D.key)),[match]=configured.matches;
+ assert.equal(configured.categories[0].scoreFormat,'two15Draw');
+ play(configured,match,[[15,11],[10,15]]);
+ const rows=T.standings(D.decode(JSON.stringify(configured)),'md');
+ assert.deepEqual(rows.map(r=>[r.entry.id,r.place,r.points,r.personalPoints,r.draws]),[[match.b,1,0.5,0.5,1],[match.a,2,0.5,0.5,1]]);
+ const board=boot({realState:configured,hash:'#board'});
+ assert.equal(parse(board.html()).querySelectorAll('table.chess-table .game-result.draw').length,2);
+ assert.deepEqual(parse(board.html()).querySelectorAll('table.chess-table td.points-col').map(cell=>cell.text),['0,5','0,5']);
+ configured.closed=true;
+ const organizer=boot({realState:configured,hash:'#standings'});
+ assert.match(organizer.html(),/title="Ничьи"/);
+ organizer.click({action:'entry-stats',id:match.a});
+ assert.match(organizer.node('#dialog').innerHTML,/Очки в личных встречах<\/dt><dd>0,5/);
+ organizer.click({action:'export-protocol'});
+ const [category]=JSON.parse(await organizer.downloads[0].text()).categories;
+ assert.equal(category.matches[0].outcome,'draw');
+ assert.deepEqual(category.standings.map(r=>r.personalPoints),[0.5,0.5]);
 });
 function play(state,match,scores=win){
  C.assign(state,match.id,1,Date.parse(state.settings.date+'T10:00:00'));

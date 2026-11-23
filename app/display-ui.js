@@ -38,11 +38,11 @@ function progressLegend(drawRules){
 const coefficient=value=>value===Infinity?'∞':Number(value||0).toLocaleString('ru-RU',{maximumFractionDigits:2});
 const difference=value=>value>0?'+'+value:String(value||0);
 const ratioText=(a,b)=>coefficient(b?a/b:(a?Infinity:0));
-const circleRankingOrder='Очки → личные встречи → разница партий в личных встречах → разница воланов в личных встречах → разница партий во всех встречах → разница воланов во всех встречах → меньший рейтинг';
+const circleRankingOrder='Очки → очки в личных встречах → разница партий в личных встречах → разница воланов в личных встречах → разница партий во всех встречах → разница воланов во всех встречах → меньший рейтинг';
 const swissRankingOrder='Очки → Соперники → Побеждённые → личная встреча двух равных → отношение партий → разница воланов первых двух партий → разница всех воланов';
 const swissDrawRankingOrder='Очки → разница геймов в личных встречах → разница воланов в личных встречах → Соперники → Побеждённые → отношение партий → разница воланов первых двух партий → разница всех воланов. Личные показатели сравниваются, если все пары с равными очками сыграли друг с другом.';
 function statsFor(row,scheme){
- const drawRules=scheme==='swiss'&&C.usesDrawRules(state,row.entry.category);
+ const drawRules=C.usesDrawRules(state,row.entry.category);
  const stats=[
   ['Игры',row.played],['Победы',row.wins],...(drawRules?[['Ничьи',row.draws]]:[]),['Поражения',row.losses],['Турнирные очки',coefficient(row.points)],
   ['Партии',row.setsFor+':'+row.setsAgainst],['Разница партий',difference(row.setsFor-row.setsAgainst)],['Отношение партий',ratioText(row.setsFor,row.setsAgainst)],
@@ -53,7 +53,7 @@ function statsFor(row,scheme){
   ['Очки условных соперников за пропуск',coefficient(row.byeOpponentPoints)]);
  if(scheme==='swiss'&&!drawRules)stats.push(['Личная встреча',row.headToHead?surnames(row.headToHead)+' · победа':'—']);
  if(row.headToHeadGames!==undefined)stats.push(['Разница геймов в личных встречах',difference(row.headToHeadGames)],['Разница воланов в личных встречах',difference(row.headToHeadRallies)]);
- if(row.personalPoints!==undefined)stats.push(['Побед среди равных',row.personalPoints],['Разница партий среди равных',difference(row.personalSets)],['Разница воланов среди равных',difference(row.personalBalls)]);
+ if(row.personalPoints!==undefined)stats.push([drawRules?'Очки в личных встречах':'Побед среди равных',coefficient(row.personalPoints)],['Разница партий среди равных',difference(row.personalSets)],['Разница воланов среди равных',difference(row.personalBalls)]);
  if(row.qualificationLot)stats.push(['Порядок выхода из группы','Жребий при равенстве']);
  return stats;
 }
@@ -70,7 +70,7 @@ function showEntryStats(id,group){
 }
 function standingsTable(id,isBoard=false,rows=T.standings(state,id),group){
  const scheme=T.schemeOf(state,id),swiss=scheme==='swiss';
- const drawRules=swiss&&C.usesDrawRules(state,id);
+ const drawRules=C.usesDrawRules(state,id);
  const coefficients=swiss&&(!isBoard||state.categories.length<=2);
  const playoff=T.isBracket(state,id)&&group===undefined;
  const header=coefficients?'<th class="numeric tiebreak-col">Соперники</th><th class="numeric tiebreak-col">Побежденные</th>':'';
@@ -118,7 +118,7 @@ function chessTable(category,rows,order,label,group){
   }).join('');
   return '<tr><td class="chess-number">'+(index+1)+'</td><th scope="row" class="chess-player">'+
    (leader?'<span class="chess-leader" aria-label="Первое место">'+icon('crown')+'</span>':'')+'<span class="team-names">'+pairNames(id)+'</span></th>'+cells+
-   '<td class="points-col"><strong>'+(row?.points??0)+'</strong></td></tr>';
+   '<td class="points-col"><strong>'+coefficient(row?.points)+'</strong></td></tr>';
  }).join('')+'</tbody></table>';
 }
 function slotLabel(context,ref){
@@ -236,7 +236,7 @@ function divisionContent(id,isBoard){
 }
 function standings(){
  const id=selectedCategory,scheme=T.schemeOf(state,id);
- const drawRules=scheme==='swiss'&&C.usesDrawRules(state,id);
+ const drawRules=C.usesDrawRules(state,id);
  return heading('Турнирные таблицы','Положение и показатели по завершённым встречам.',
  (mode==='real'&&state.closed?'<button class="btn" data-action="export-protocol">'+icon('download')+'Скачать протокол тура</button>':'')+
  (mode==='real'&&state.closed?'<button class="btn primary" data-action="send-league-results">Передать в Лигу 8Я</button>':''))+

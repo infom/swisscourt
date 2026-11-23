@@ -7,6 +7,11 @@ const groupNumber=group=>group+1;
 const roundRobinCount=n=>n*(n-1)/2;
 const groupSizes=(n,count)=>Array.from({length:count},(_,i)=>Math.floor(n/count)+(i<n%count?1:0));
 const circleRounds=n=>n-1+n%2;
+const supportsDraws=scheme=>scheme==='circle'||scheme==='swiss';
+function validateScoreFormat(scheme,scoreFormat){
+ if(!Object.hasOwn(C.scoreFormats,scoreFormat))throw Error('Проверьте формат счёта.');
+ if(C.scoreFormats[scoreFormat].allowsDraw&&!supportsDraws(scheme))throw Error('Формат с ничьей доступен в круговой и швейцарской схемах.');
+}
 function circlePairs(order,round){
  const rounds=circleRounds(order.length);
  const pairs=C.roundRobin(order,(round-1)%rounds+1);
@@ -20,8 +25,8 @@ function groupPlayoffs(category,n){
 }
 function validPlan(category,n){
  const {scheme,rounds,groupCount,playoffs,bracketMode,scoreFormat,seeding}=category;
- if(!Object.hasOwn(schemes,scheme)||!Object.hasOwn(C.scoreFormats,scoreFormat)||seeding!==undefined&&!['rating','random','manual'].includes(seeding))throw Error('Проверьте схему и формат счёта.');
- if(C.scoreFormats[scoreFormat].allowsDraw&&scheme!=='swiss')throw Error('Формат с ничьей доступен в швейцарской схеме.');
+ if(!Object.hasOwn(schemes,scheme)||seeding!==undefined&&!['rating','random','manual'].includes(seeding))throw Error('Проверьте схему и формат счёта.');
+ validateScoreFormat(scheme,scoreFormat);
  if(!Number.isInteger(n)||n<2||n>32)throw Error('Нужно от 2 до 32 участников.');
  if(scheme==='circle'&&category.circles!==undefined&&![1,2].includes(category.circles))throw Error('Выберите один или два круга.');
  if(scheme==='swiss'&&![3,4,5,6,7].includes(rounds))throw Error('Выберите от 3 до 7 туров.');
@@ -162,6 +167,6 @@ function context(state,category,groupRank){
  })];
  return {...structure,nodes,matches,leads,resolve,expected};
 }
-const api={schemes,modes,groupNumber,groupSizes,groupPlayoffs,circleRounds,circlePairs,validPlan,layout,matchCount,context};
+const api={schemes,modes,groupNumber,groupSizes,groupPlayoffs,circleRounds,circlePairs,supportsDraws,validateScoreFormat,validPlan,layout,matchCount,context};
 root.SwissCourtBrackets=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

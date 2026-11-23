@@ -161,6 +161,7 @@ function matchResult(state,match,scores=match.scores,lotWinner=match.lotWinner){
   lotWinner
  });
 }
+const matchPoints=(result,side)=>result.winner===null?0.5:Number(result.winner===side);
 function shortScore(scores){return scores.map(([a,b])=>a>b?String(b):'−'+a).join(';');}
 function restMinutes(state,match,now=Date.now()){
  const previous=state.matches.filter(m=>m.status==='done'&&m.id!==match.id&&(state.kind==='tournament'?
@@ -270,7 +271,6 @@ function standings(state,category){
  const rows=state.entries.filter(e=>e.category===category).map(e=>({entry:e,played:0,wins:0,draws:0,losses:0,points:0,byes:0,setsFor:0,setsAgainst:0,ballFor:0,ballAgainst:0,firstTwoDiff:0,buchholz:0,berger:0}));
  const map=new Map(rows.map(r=>[r.entry.id,r]));
  const done=state.matches.filter(m=>m.category===category&&m.status==='done'&&map.has(m.a)&&map.has(m.b)).map(m=>({...m,result:matchResult(state,m)})).filter(m=>m.result.ok);
- const matchPoints=(result,side)=>result.winner===null?0.5:Number(result.winner===side);
  for(const m of done){
   const result=m.result;
   for(const [side,id] of [m.a,m.b].entries()){
@@ -296,6 +296,6 @@ function standings(state,category){
  }
  return rankStandings(rows,done,swiss,swiss&&usesDrawRules(state,category));
 }
-const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,scoreFormats,formatOf,matchFormat,usesDrawRules,capOf,matchResult,shortScore,restMinutes,restInterval,validRestInterval,queue,queueItems,matchAvailability,entryActivity,entryProgress,courtTiming,restTiming,nextForEntry,normalizeName,playerParts,playerFullName,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings,rankStandings};
+const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,scoreFormats,formatOf,matchFormat,usesDrawRules,capOf,matchResult,matchPoints,shortScore,restMinutes,restInterval,validRestInterval,queue,queueItems,matchAvailability,entryActivity,entryProgress,courtTiming,restTiming,nextForEntry,normalizeName,playerParts,playerFullName,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings,rankStandings};
 root.SwissCourtCore=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

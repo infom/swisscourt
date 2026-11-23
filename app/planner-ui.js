@@ -144,7 +144,7 @@ function planRow(category,index,metric){
  const input=(field,type,value,attrs='')=>'<input class="form-control" type="'+type+'" aria-label="'+({name:'Название категории',planned:'Участники по плану'}[field])+'" data-plan="'+field+'" data-index="'+index+
   '" value="'+esc(value)+'" '+attrs+' '+(locked?'disabled':'')+'>';
  const names=Object.fromEntries(T.divisions.map(c=>[c.id,c.code+' · '+c.name]));
- const formats=Object.fromEntries(Object.entries(C.scoreFormats).filter(([,format])=>scheme==='swiss'||!format.allowsDraw)
+ const formats=Object.fromEntries(Object.entries(C.scoreFormats).filter(([,format])=>B.supportsDraws(scheme)||!format.allowsDraw)
   .map(([key,format])=>[key,format.label]));
  const label=category.doubles?'Пар':'Участников',schemeIcon={circle:'refresh',swiss:'table',knockout:'grid',groups:'people'};
  return '<div class="plan-grid plan-category-row"><div class="plan-name">'+input('name','text',category.name,'maxlength="5" placeholder="'+esc(category.code)+'"')+'</div>'+
@@ -295,7 +295,7 @@ function updatePlanField(target,commit){
  else {
   category[field]=['rounds','circles'].includes(field)?Number(target.value):target.value;
   if(field==='scheme'){
-   if(category.scheme!=='swiss'&&C.scoreFormats[category.scoreFormat].allowsDraw)category.scoreFormat='two15';
+   if(!B.supportsDraws(category.scheme)&&C.scoreFormats[category.scoreFormat].allowsDraw)category.scoreFormat='two15';
    if(category.scheme==='groups')normalizeGroupPlan(category);
   }
  }

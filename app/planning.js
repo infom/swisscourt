@@ -13,7 +13,7 @@ function realStart(state,now){
  for(const match of state.matches){
   if(match.status==='queued')continue;
   if(Number.isFinite(match.startedAt))earliest=Math.min(earliest,match.startedAt);
-  else if(Number.isFinite(match.endedAt))earliest=Math.min(earliest,match.endedAt-C.formatOf(state,match.category).minutes*minute);
+  else if(Number.isFinite(match.endedAt))earliest=Math.min(earliest,match.endedAt-C.matchFormat(state,match).minutes*minute);
  }
  return Number.isFinite(earliest)?earliest:now;
 }
@@ -77,7 +77,7 @@ function estimate(state,{actual=false,now=Date.now()}={}){
  for(const original of state.categories){
   const count=state.entries.filter(e=>e.category===original.id).length;
   const n=actual?count:original.planned||count||8;
-  const cat=original.scheme?original:{...original,scheme:n<7?'circle':'swiss',scoreFormat:'classic',seeding:'rating'};
+  const cat=original.scheme?original:{...original,scheme:n<7?'circle':'swiss',scoreFormat:original.scoreFormat||'classic',seeding:'rating'};
   const assumed=C.formatOf(state,cat.id).minutes;
   const measured=state.matches.filter(m=>m.category===cat.id&&m.status==='done'&&m.startedAt>0&&m.endedAt-m.startedAt>=minute);
   const duration=live&&measured.length>=3?Math.min(assumed*2,Math.max(assumed/2,measured.reduce((sum,m)=>sum+(m.endedAt-m.startedAt)/minute,0)/measured.length)):assumed;

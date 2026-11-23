@@ -48,7 +48,7 @@ test('surname-first manual input still rejects duplicates from imported and lega
  }
 });
 
-test('roster, search, removal, import preview and CSV consistently use surname then given name',async()=>{
+test('roster, search, removal, import preview and the protocol consistently use surname then given name',async()=>{
  const s=day(),ui=boot({realState:s});ui.run('view="participants";render()');
  assert.match(ui.html(),/Чернова Мария/);assert.doesNotMatch(ui.html(),/Мария Чернова/);
  ui.run('query="чернова мария";render()');assert.match(ui.html(),/Показано: 1/);
@@ -57,7 +57,10 @@ test('roster, search, removal, import preview and CSV consistently use surname t
  ui.click({action:'import'});
  ui.run('globalThis.fetch=async()=>({ok:true,json:async()=>('+JSON.stringify({name:'Женский парный',code:'WD',entries:s.entries,warnings:[]})+')})');
  await ui.run('fetchImport("https://example.test/category")');assert.match(ui.node('#dialog').innerHTML,/Чернова Мария/);assert.doesNotMatch(ui.node('#dialog').innerHTML,/Мария Чернова/);
- ui.click({action:'export'});const csv=await ui.downloads[0].text();assert.match(csv,/"Чернова Мария";"Белова Анна"/);assert.doesNotMatch(csv,/Мария Чернова/);
+ T.start(s);C.assign(s,s.matches[0].id,1);T.finish(s,s.matches[0].id,[[21,12],[21,14]]);s.closed=true;
+ const finished=boot({realState:s,hash:'#standings'});finished.click({action:'export-protocol'});
+ const protocol=JSON.parse(await finished.downloads[0].text());
+ assert.deepEqual(protocol.categories[0].participants[0].players.map(p=>p.name),['Чернова Мария','Белова Анна']);
 });
 
 test('queue, courts, score entry, results and scoreboard only show compact player names',()=>{

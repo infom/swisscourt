@@ -14,13 +14,111 @@ test('category badges show a short custom label or the division code when the na
  const ui=boot({realState:s,hash:'#tournament'});
  assert.match(ui.run('badge("md")'),/>КЛУБ<\/span>/);
  const {parse}=require('node-html-parser'),planner=parse(ui.html());
- assert.equal(planner.querySelectorAll('[data-action="save-plan"]').length,1);
+ assert.equal(planner.querySelectorAll('[data-action="save-plan"]').length,0);
  assert.equal(planner.querySelectorAll('.plan-toolbar [data-action="new-day"], .plan-toolbar [data-action="add-plan-category"]').length,2);
  assert.equal(planner.querySelectorAll('.plan-menu [data-action="backup"], .plan-menu #restore-file').length,2);
  ui.change({plan:'name',index:'0'},'');
- ui.click({action:'save-plan'});
+ ui.run('view="participants";render()');
  assert.match(ui.run('badge("md")'),/>MD<\/span>/);
  assert.equal(D.decode(ui.storage.get(D.key)).categories[0].name,'');
+});
+test('planner autosaves valid settings and category changes before continuing to participants',()=>{
+ const ui=boot({realState:day(4),hash:'#tournament'});
+ const title=ui.node('#day-title');title.dataset={planSetting:'title'};
+ ui.input('#day-title','Кубок клуба');
+ ui.click({action:'add-plan-category'});
+ ui.change({plan:'scoreFormat',index:'1'},'two15');
+ ui.run('view="participants";render()');
+ const saved=D.decode(ui.storage.get(D.key));
+ assert.equal(saved.settings.title,'Кубок клуба');
+ assert.equal(saved.categories.length,2);
+ assert.equal(saved.categories[1].scoreFormat,'two15');
+ const uiReloaded=boot({realState:saved,hash:'#participants'});
+ assert.ok(uiReloaded.run('state.categories.some(c=>c.scoreFormat==="two15")'));
+});
+test('live planner changes scoring without reinterpreting completed matches or their corrections',()=>{
+ const s=day(4),C=require('../app/core.js');T.start(s);
+ const [completed,playing]=s.matches;
+ C.assign(s,completed.id,1);C.assign(s,playing.id,2);
+ T.finish(s,completed.id,[[21,15],[21,17]]);
+ T.finish(s,completed.id,[[21,13],[21,17]]);
+ const ui=boot({realState:s,hash:'#tournament'});
+ ui.change({plan:'scoreFormat',index:'0'},'two15');
+ const saved=D.decode(ui.storage.get(D.key));
+ assert.equal(saved.categories[0].scoreFormat,'two15');
+ assert.equal(saved.matches[0].scoreFormat,'classic');
+ assert.deepEqual(T.standings(saved,'md'),T.standings(s,'md'));
+ assert.deepEqual(saved.history,s.history);
+ ui.click({action:'score',id:completed.id});
+ assert.match(ui.node('#dialog').innerHTML,/до 21/);
+ ui.click({action:'close'});
+ ui.click({action:'score',id:playing.id});
+ assert.match(ui.node('#dialog').innerHTML,/до 15/);
+ assert.doesNotMatch(ui.node('#dialog').innerHTML,/3 партия/);
+});
+test('live court count returns only matches on removed courts and preserves saved scores',()=>{
+ const C=require('../app/core.js'),s=day(8);T.start(s);
+ const [retained,removed,alsoRemoved,completed]=s.matches;
+ C.assign(s,retained.id,2);C.assign(s,removed.id,6);C.assign(s,alsoRemoved.id,7);C.assign(s,completed.id,5);
+ T.finish(s,completed.id,[[21,15],[21,17]]);
+ const ui=boot({realState:s,hash:'#tournament'}),{parse}=require('node-html-parser');
+ const field=parse(ui.html()).querySelector('select[data-plan-setting="courts"]');
+ assert.ok(field);assert.equal(field.hasAttribute('disabled'),false);
+ const change=value=>ui.change({planSetting:'courts'},String(value),'plan-courts');
+ change(8);
+ const expanded=D.decode(ui.storage.get(D.key));
+ assert.equal(expanded.settings.courts,8);
+ assert.deepEqual(expanded.matches,s.matches);
+ assert.equal(parse(ui.node('.courts-dock').outerHTML).querySelectorAll('.court-open').length,8);
+ change(0);
+ assert.equal(D.decode(ui.storage.get(D.key)).revision,expanded.revision);
+ change(4);
+ const reduced=D.decode(ui.storage.get(D.key));
+ assert.equal(reduced.settings.courts,4);
+ assert.equal(reduced.revision,expanded.revision+1);
+ assert.deepEqual(reduced.matches[0],retained);
+ assert.deepEqual(reduced.matches[3],completed);
+ assert.deepEqual(C.queue(reduced).map(m=>m.id),[removed.id,alsoRemoved.id]);
+ for(const match of reduced.matches.slice(1,3)){
+  assert.equal(match.status,'queued');assert.equal(match.court,undefined);assert.equal(match.startedAt,undefined);
+ }
+ const restored=boot({realState:reduced,hash:'#dashboard'});
+ assert.equal(parse(restored.html()).querySelectorAll('.court-open').length,4);
+ assert.deepEqual(restored.run('JSON.stringify(freeCourts())'),'[1,3,4]');
+});
+test('auto-call goes through the full queue and fills free courts without calling blocked matches',()=>{
+ const C=require('../app/core.js'),s=day(4);s.settings.courts=3;
+ s.categories.push(T.divisions.find(c=>c.id==='ms'));
+ for(let i=0;i<4;i++)s.entries.push({id:'s'+i,category:'ms',players:[{name:'Игрок Одиночник'+i}]});
+ T.start(s);C.assign(s,s.matches[0].id,2);
+ const expected=C.queue(s).slice(0,2).map(m=>m.id);
+ const ui=boot({realState:s,hash:'#dashboard'});
+ ui.click({action:'filter',id:'ms'});
+ assert.match(ui.html(),/АВТОВЫЗОВ/);
+ ui.click({action:'auto-call'});
+ const saved=D.decode(ui.storage.get(D.key));
+ assert.deepEqual([1,3].map(court=>saved.matches.find(m=>m.court===court).id),expected);
+ assert.equal(saved.matches.filter(m=>m.status==='playing').length,3);
+ assert.equal(saved.matches.filter(m=>m.round>1&&m.status==='playing').length,0);
+ assert.equal(saved.revision,s.revision+1);
+ ui.click({action:'auto-call'});
+ assert.equal(D.decode(ui.storage.get(D.key)).revision,saved.revision);
+});
+test('a smaller court dock keeps every court actionable and remembers its size',()=>{
+ const C=require('../app/core.js'),s=day(4);T.start(s);C.assign(s,s.matches[0].id,1);
+ const ui=boot({realState:s,hash:'#dashboard'}),{parse}=require('node-html-parser');
+ assert.ok(parse(ui.html()).querySelector('.courts-dock-full .court-match'));
+ ui.change({},'minimal','court-dock-size');
+ let panel=parse(ui.html()).querySelector('.courts-dock-minimal');
+ assert.equal(panel.querySelectorAll('.court-open').length,s.settings.courts);
+ assert.equal(panel.querySelectorAll('.court-strip-team').length,0);
+ ui.change({},'compact','court-dock-size');
+ panel=parse(ui.html()).querySelector('.courts-dock-compact');
+ assert.equal(panel.querySelectorAll('.court-strip-team').length,2);
+ ui.click({action:'score',id:s.matches[0].id,court:'1'});
+ assert.match(ui.node('#dialog').innerHTML,/КОРТ 1/);
+ ui.run('courtDockSize=localStorage.getItem(courtDockSizeKey);render()');
+ assert.match(ui.html(),/courts-dock-compact/);
 });
 test('real UI starts odd field, publishes next round and retains entered scores after reopening',()=>{
  const ui=boot({realState:day(9),hash:'#participants'});ui.click({action:'prepare-draw'});ui.click({action:'draw'});assert.match(ui.node('#dialog').innerHTML,/Пропускает тур/);
@@ -108,14 +206,16 @@ test('league roster preview and refresh preserve manual entries, remove withdraw
  const initial=D.decode(ui.storage.get(D.key));
  assert.equal(initial.settings.date,item.date);
  assert.equal(initial.settings.level,'СТАРТ');
+ assert.equal(initial.settings.restMinutes,5);
  assert.equal(initial.entries.length,3);
  const imported=initial.entries[1];
  assert.equal(imported.leagueSource,item.selection);
- ui.run('mutate(day=>{day.entries[1].players[0].rating=1500;})');
+ ui.run('mutate(day=>{day.entries[1].players[0].rating=1500;day.settings.restMinutes=9;})');
  entries=[pair('Основной',null),pair('Новый')];
  await ui.run('leagueImportDialog()');await preview();
  ui.click({action:'confirm-import'});
  const refreshed=D.decode(ui.storage.get(D.key));
+ assert.equal(refreshed.settings.restMinutes,9);
  assert.deepEqual(refreshed.entries[0],s.entries[0]);
  assert.equal(refreshed.entries.length,3);
  assert.equal(refreshed.entries[1].id,imported.id);
@@ -123,7 +223,10 @@ test('league roster preview and refresh preserve manual entries, remove withdraw
  assert.equal(refreshed.entries[2].players[0].surname,'Новый');
 });
 test('league import can reuse an explicitly selected empty category without adding one',()=>{
- const s=day(0),ui=boot({realState:s,hash:'#participants'});
+ const s=day(0),ui=boot({realState:s,hash:'#tournament'});
+ const restField=ui.node('#plan-rest-minutes');restField.dataset={planSetting:'restMinutes'};
+ ui.input('#plan-rest-minutes','10');ui.input('#plan-rest-minutes','15');
+ ui.run('view="participants";render()');
  ui.run(`importPreview={selection:'1/start/XD',date:'2026-11-25',venue:'КСШ',levelLabel:'СТАРТ',code:'XD',name:'Микст',
   entries:[{players:[{name:'Иван Иванов',rating:null},{name:'Елена Иванова',rating:null}]}]};showImportPreview(importPreview)`);
  assert.doesNotMatch(ui.node('#dialog').innerHTML,/Создать категорию/);
@@ -136,8 +239,5 @@ test('league import can reuse an explicitly selected empty category without addi
  const saved=D.decode(ui.storage.get(D.key));
  assert.deepEqual(saved.categories.map(c=>[c.id,c.code]),[['md','XD']]);
  assert.equal(saved.entries[0].category,'md');
-});
-test('CSV treats imported spreadsheet formulas as literal player names',async()=>{
- const s=day();s.entries[0].players[0].name='Иван =HYPERLINK(1)';const ui=boot({realState:s});ui.click({action:'export'});
- assert.match(await ui.downloads[0].text(),/"'=HYPERLINK\(1\) Иван"/);
+ assert.equal(saved.settings.restMinutes,15);
 });

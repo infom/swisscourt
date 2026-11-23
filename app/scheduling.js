@@ -15,12 +15,14 @@ function plan(state,category){
  const ready=new Set(entries.filter(e=>!unavailable.has(e.id)).map(e=>e.id));
  if(pending.length&&ready.size<2)return null;
  const points=new Map(C.standings(base,category).map(r=>[r.entry.id,r.points]));
- let common=null,finalDraw=null,combinations=0;
- // Pairing depends on match wins, seed and recorded floats, never on game
- // scores or standings tie-breakers. Enumerate both winners for each pending
- // match. Hypothetical wins exist only in this local Map, never in saved data.
+ let common=null,finalDraw=null,combinations=0,timedOut=false;
+ const pointsSplits=pending.map(match=>C.matchFormat(state,match).allowsDraw?[[1,0],[0,1],[0.5,0.5]]:[[1,0],[0,1]]);
+ const deadline=pointsSplits.some(splits=>splits.length===3)?Date.now()+300:Infinity;
+ // A pair is safe to publish only if it survives every possible allocation of match points.
  function visit(index){
   if(common?.size===0)return;
+  // If the proof takes too long, wait for a result to narrow the possibilities.
+  if(deadline!==Infinity&&Date.now()>=deadline){timedOut=true;return;}
   if(index===pending.length){
    let proposal;
    try{proposal=T.draw(base,category,round,{locked,points});}
@@ -31,10 +33,16 @@ function plan(state,category){
    return;
   }
   const m=pending[index];
-  for(const winner of [m.a,m.b]){points.set(winner,points.get(winner)+1);visit(index+1);points.set(winner,points.get(winner)-1);if(common?.size===0)break;}
+  const beforeA=points.get(m.a),beforeB=points.get(m.b);
+  for(const [a,b] of pointsSplits[index]){
+   points.set(m.a,beforeA+a);points.set(m.b,beforeB+b);
+   visit(index+1);
+   if(timedOut||common?.size===0)break;
+  }
+  points.set(m.a,beforeA);points.set(m.b,beforeB);
  }
  visit(0);
- if(pending.length&&!common?.size)return null;
+ if(timedOut||pending.length&&!common?.size)return null;
  const seed=new Map(entries.map((e,i)=>[e.id,i]));
  const matches=[...(common?.values()||[])].map(m=>({...m,id:category+'-'+round+'-ready-'+Math.min(seed.get(m.a),seed.get(m.b))+'-'+Math.max(seed.get(m.a),seed.get(m.b)),...(pending.length?{early:true}:{})}));
  return {dayId:state.id,revision:state.revision,category,round,matches,complete:pending.length===0,bye:pending.length===0?finalDraw?.bye:null,combinations};

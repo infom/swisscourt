@@ -49,7 +49,11 @@ function validate(state,{ready=false}={}){
  for(const cat of state.categories){
   const known=divisions.find(c=>c.id===(cat.division||cat.id));
   if(!known||!safeId(cat.id)||cat.code!==known.code||cat.doubles!==known.doubles||![3,4,5,6,7].includes(cat.rounds)||typeof cat.name!=='string'||cat.name.length>100)fail('Проверьте параметры категорий.');
-  if(cat.scheme)B.validPlan(cat,cat.planned);
+  if(cat.scoreFormat!==undefined&&!Object.hasOwn(C.scoreFormats,cat.scoreFormat))fail('Проверьте формат счёта.');
+  if(cat.scheme){
+   if(!state.started||cat.scheme!=='swiss')B.validPlan(cat,cat.planned);
+   else if(!Number.isInteger(cat.planned)||cat.planned<2||cat.planned>32)fail('Нужно от 2 до 32 участников по плану.');
+  }
  }
  if(!Array.isArray(state.entries)||!Array.isArray(state.matches)||!Array.isArray(state.byes)||!Array.isArray(state.history))fail('Повреждены данные турнира.');
  const partials=state.partialRounds||[];
@@ -70,6 +74,7 @@ function validate(state,{ready=false}={}){
  for(const cat of state.categories){
   const n=state.entries.filter(e=>e.category===cat.id).length;
   if(n>32)fail(cat.name+': максимум 32 участника.');
+  if(C.scoreFormats[cat.scoreFormat]?.allowsDraw&&schemeOf(state,cat.id)!=='swiss')fail('Формат с ничьей доступен в швейцарской схеме.');
   if((ready||state.started)&&n<2)fail(cat.code+': нужно не меньше двух участников / пар.');
   if(cat.scheme&&(ready||state.started))B.validPlan(cat,n);
  }
@@ -85,6 +90,8 @@ function validate(state,{ready=false}={}){
    if(!Number.isInteger(m.court)||m.court<1||m.court>s.courts||occupied.has(m.court)||!Number.isFinite(m.startedAt))fail('Конфликт или неверный номер корта.');occupied.add(m.court);
    for(const eid of [m.a,m.b]){if(active.has(eid))fail('Игрок уже на другом корте.');active.add(eid);}
   }
+  if(m.scoreFormat!==undefined&&(m.status!=='done'||!Object.hasOwn(C.scoreFormats,m.scoreFormat)||C.scoreFormats[m.scoreFormat].allowsDraw&&type!=='swiss'))fail('Неверный формат счёта встречи.');
+  if(m.playedCourt!==undefined&&(m.status!=='done'||!Number.isInteger(m.playedCourt)||m.playedCourt<1||m.playedCourt>32))fail('Неверный номер корта сыгранной встречи.');
   if(m.status==='done'&&(!Array.isArray(m.scores)||m.scores.some(g=>!Array.isArray(g)||g.length!==2||g.some(v=>!Number.isInteger(v)))||!C.matchResult(state,m).ok||!Number.isFinite(m.endedAt)))fail('Неверный результат встречи.');
  }
  const byeEntries=new Set();
@@ -126,6 +133,50 @@ function roundCount(state,category){
  const n=state.entries.filter(e=>e.category===category).length,cat=state.categories.find(c=>c.id===category);
  if(isBracket(state,category)&&state.started)return Math.max(...bracketContext(state,category).nodes.map(node=>node.round));
  return schemeOf(state,category)==='circle'?B.circleRounds(n)*(cat.circles||1):cat.rounds;
+}
+function startedSwissRounds(state,category){
+ return Math.max(0,...state.matches.filter(m=>m.category===category&&m.status!=='queued').map(m=>m.round));
+}
+function updateLiveCategory(state,id,field,value){
+ const category=state.categories.find(c=>c.id===id);
+ if(!category||!state.started||state.closed)fail('Параметры категории сейчас недоступны.');
+ if(field==='scoreFormat'){
+  if(!Object.hasOwn(C.scoreFormats,value))fail('Проверьте формат счёта.');
+  if(C.scoreFormats[value].allowsDraw&&schemeOf(state,id)!=='swiss')fail('Формат с ничьей доступен в швейцарской схеме.');
+  const previous=category.scoreFormat||'classic';
+  if(previous===value)return;
+  for(const match of state.matches)if(match.category===id&&match.status==='done')match.scoreFormat??=previous;
+  if(C.scoreFormats[value].allowsDraw&&!C.scoreFormats[previous].allowsDraw){
+   const partial=(state.partialRounds||[]).find(p=>p.category===id);
+   if(partial)state.matches=state.matches.filter(m=>m.category!==id||m.round!==partial.round||m.status!=='queued');
+  }
+  category.scoreFormat=value;
+  return;
+ }
+ if(field!=='rounds'||schemeOf(state,id)!=='swiss')fail('Менять число туров можно в швейцарской категории.');
+ const ids=drawOrder(state,id);
+ if(![3,4,5,6,7].includes(value)||value>B.circleRounds(ids.length))fail('Выберите число туров от 3 до '+Math.min(7,B.circleRounds(ids.length))+'.');
+ if(value<startedSwissRounds(state,id))fail('Нельзя убрать тур, в котором уже вызваны встречи.');
+ const previous=category.rounds;
+ if(value>previous){
+  const status=roundStatus(state,id);
+  if(ids.length+ids.length%2<2*value){
+   const extended={...state,categories:state.categories.map(c=>c===category?{...c,rounds:value}:c)};
+   if(status.partial){
+    const locked=state.matches.filter(m=>m.category===id&&m.round===status.round);
+    const base={...extended,matches:state.matches.filter(m=>!locked.includes(m))};
+    draw(base,id,status.round,{locked});
+   }else if(!swissContinuation(extended,id,status.round,ids,[])([],null)){
+    fail('С учётом уже опубликованных встреч нельзя добавить столько туров без повторных соперников.');
+   }
+  }
+ }else if(value<previous){
+  const kept=m=>m.category!==id||m.round<=value;
+  state.matches=state.matches.filter(kept);
+  state.byes=state.byes.filter(kept);
+  if(state.partialRounds)state.partialRounds=state.partialRounds.filter(kept);
+ }
+ category.rounds=value;
 }
 function roundStatus(state,category){
  const matches=state.matches.filter(m=>m.category===category),partial=(state.partialRounds||[]).find(p=>p.category===category);
@@ -311,13 +362,12 @@ function swissPairs(state,category,round,{locked=[],points=null}={}){
    return [Math.abs(a.points-b.points),floats,Math.abs(rank.get(a.entry.id)-rank.get(b.entry.id))];
   }));
   if(rest.length>18){
-   // Encode the lexicographic sum. Each base exceeds the entire possible
-   // lower-priority sum, so a lower-priority improvement cannot win a tie early.
+   // Double point gaps to keep half points integral before encoding the lexicographic sum.
    const base=rest.length*rest.length+1;
    const edges=[];
    for(let i=0;i<rest.length;i++)for(let j=i+1;j<rest.length;j++)if(allowed[i][j]){
     const [gap,floats,seedGap]=costs[i][j];
-    edges.push([i,j,-(gap*base*base+floats*base+seedGap)]);
+    edges.push([i,j,-(2*gap*base*base+floats*base+seedGap)]);
    }
    const mates=blossom(edges,true);
    if(mates.length!==rest.length||mates.includes(-1))continue;
@@ -459,6 +509,6 @@ function standings(state,category){
  }
  return rows.sort((a,b)=>(a.place??Infinity)-(b.place??Infinity));
 }
-const api={divisions,seedModes,newDay,parseRentalDuration,rentalDuration,validate,schemeOf,isBracket,bracketContext,groupStandings,totalMatches,seeded,seedLabels,preparedOrder,prepareDraw,setSeedMode,clearDraw,swapDraw,pruneDraws,drawOrder,roundCount,roundStatus,draw,publish,start,redraw,finish,standings};
+const api={divisions,seedModes,newDay,parseRentalDuration,rentalDuration,validate,schemeOf,isBracket,bracketContext,groupStandings,totalMatches,seeded,seedLabels,preparedOrder,prepareDraw,setSeedMode,clearDraw,swapDraw,pruneDraws,drawOrder,roundCount,startedSwissRounds,roundStatus,updateLiveCategory,draw,publish,start,redraw,finish,standings};
 root.SwissCourtTournament=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

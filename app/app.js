@@ -1,6 +1,6 @@
 /* SwissCourt: organizer and public display. */
 'use strict';
-const appVersion='1.3.0';
+const appVersion='1.4.0';
 const C=SwissCourtCore;
 const T=SwissCourtTournament,D=SwissCourtStorage;
 const S=typeof SwissCourtSimulation==="undefined"?null:SwissCourtSimulation;
@@ -41,6 +41,10 @@ const prepareMatchCount=4;
 let mode=['simulation','prep','live'].includes(params.get('scenario'))?params.get('scenario'):'real';
 let editorReady=false,editorBusy=false,recoveryState=null;
 let offlineReady=false,offlineError='';
+const courtDockSizes={minimal:'Минимум',compact:'Компактный',full:'Полный'};
+const courtDockSizeKey='swisscourt-court-dock-size';
+let courtDockSize='full';
+try{const saved=localStorage.getItem(courtDockSizeKey);if(Object.hasOwn(courtDockSizes,saved))courtDockSize=saved;}catch{}
 const simulationStorageKey='swisscourt-yug-arena-simulation-v1';
 let simulationPlan=null,simulationControl=null,simulationStamp='';
 function initSimulation(){
@@ -109,13 +113,14 @@ const versus=(match,stage=true)=>'<span class="versus" aria-label="'+esc(categor
 function matchup(match,extra='',activity,winner){
  const side=(id,index)=>{
   const busy=activity&&C.entryActivity(state,id,gameNow()).playing;
-  return '<div class="match-side '+(activity?'with-activity ':'')+(busy?'is-busy':'')+(winner!==undefined?(winner===index?' result-winner':' result-loser'):'')+'"><div class="team-names">'+pairNames(id)+'</div>'+(activity?activityLine(id,activity==='labeled'):'')+'</div>';
+  const outcome=winner===null?' result-draw':winner===undefined?'':winner===index?' result-winner':' result-loser';
+  return '<div class="match-side '+(activity?'with-activity ':'')+(busy?'is-busy':'')+outcome+'"><div class="team-names">'+pairNames(id)+'</div>'+(activity?activityLine(id,activity==='labeled'):'')+'</div>';
  };
  return '<div class="matchup '+extra+'">'+side(match.a,0)+versus(match,winner===undefined)+side(match.b,1)+'</div>';
 }
 const time=value=>new Date(value).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',...(mode==='simulation'?{timeZone:'Europe/Moscow'}:{})});
 const dateLabel=()=>new Date(state.settings.date+'T12:00:00').toLocaleDateString('ru-RU',{day:'numeric',month:'long'});
-const freeCourts=()=>Array.from({length:state.settings.courts},(_,i)=>i+1).filter(c=>!state.matches.some(m=>m.status==='playing'&&m.court===c));
+const freeCourts=(day=state)=>Array.from({length:day.settings.courts},(_,i)=>i+1).filter(c=>!day.matches.some(m=>m.status==='playing'&&m.court===c));
 const doneMatches=()=>state.matches.filter(m=>m.status==='done');
 const currentRound=id=>{
  const matches=state.matches.filter(m=>m.category===id);
@@ -203,6 +208,7 @@ function tournamentStatus(){
  if(state.started)return ['running','Турнир идёт'];
  return ['preparing','Турнир готовится'];
 }
+function dayContext(){return '<strong>'+esc(state.settings.title)+'</strong><span>'+dateLabel()+' · '+esc(state.settings.venue)+'</span>';}
 function topbar(){
  const [status,label]=tournamentStatus();
  const canEdit=mode==='real'&&editorReady&&!storageError;
@@ -210,8 +216,7 @@ function topbar(){
   canEdit&&!state.closed&&state.categories.every(c=>T.roundStatus(state,c.id).complete)?'<button class="btn primary" data-action="close-day">Зафиксировать результаты</button>':
   canEdit&&state.closed&&view!=='standings'?'<button class="btn primary" data-action="send-league-results">Передать в Лигу 8Я</button>':'';
  return '<header class="topbar"><a class="brand" href="'+(mode==='real'?'#tournament':'#dashboard')+'"><span class="brand-mark">'+icon('court')+
-  '</span><strong>SwissCourt</strong><span class="demo-label">v'+appVersion+'</span></a><div class="day-context"><strong>'+esc(state.settings.title)+
-  '</strong><span>'+dateLabel()+' · '+esc(state.settings.venue)+'</span></div><div class="top-actions">'+
+  '</span><strong>SwissCourt</strong><span class="demo-label">v'+appVersion+'</span></a><div class="day-context">'+dayContext()+'</div><div class="top-actions">'+
   (mode==='real'?'<strong class="tournament-status '+status+'" role="status">'+label+'</strong>':'')+action+simulationControls()+
   '<button class="btn dark" data-action="board">'+icon('monitor')+'<span>Табло</span></button>'+
   '<span class="offline-status" title="'+esc(offlineError||'Заранее откройте приложение с интернетом на каждом устройстве')+'">'+
@@ -228,11 +233,34 @@ function courtCard(number){
  const m=state.matches.find(m=>m.status==='playing'&&m.court===number);
  const minutes=m?elapsed(m.startedAt):0;
  const label=m?'Корт '+number+' · '+surnames(m.a)+' против '+surnames(m.b)+' · Внести счёт':'Корт '+number+' свободен · Назначить встречу';
+ const button='<button class="court-open" data-action="'+(m?'score':'choose-match')+'" '+(m?'data-id="'+m.id+'" ':'')+'data-court="'+number+'" aria-label="'+esc(label)+'"></button>';
+ if(courtDockSize!=='full'){
+  const compact=courtDockSize==='compact';
+  const status=m?'<span class="time-'+C.courtTiming(minutes)+'"><b data-started="'+m.startedAt+'">'+minutes+'</b> мин</span>':'<span>Свободен</span>';
+  const teams=compact&&m?'<div class="court-strip-team" title="'+esc(surnames(m.a))+'">'+esc(surnames(m.a))+'</div><div class="court-strip-team" title="'+esc(surnames(m.b))+'">'+esc(surnames(m.b))+'</div>':'';
+  return '<article class="court '+(m?'occupied':'free')+'" data-court="'+number+'"><div class="court-strip-heading"><strong>'+number+'</strong>'+
+   (compact&&m?badge(m.category,'division-code'):'')+status+'</div>'+teams+button+'</article>';
+ }
  const header='<div class="court-heading"><div class="court-number"><span>КОРТ</span><strong>'+number+'</strong></div>'+(m?'<div class="court-clock time-'+C.courtTiming(minutes)+'"><strong data-started="'+m.startedAt+'">'+minutes+'</strong><span>мин</span></div>':'<span class="court-free-label"><i class="dot"></i>СВОБОДЕН</span>')+'</div>';
- return '<article class="court '+(m?'occupied':'free')+'" data-court="'+number+'">'+header+(m?'<div class="court-match">'+matchup(m)+'</div>':'<div class="free-court-body">'+icon('plus')+'<span>Назначить встречу</span></div>')+'<button class="court-open" data-action="'+(m?'score':'choose-match')+'" '+(m?'data-id="'+m.id+'" ':'')+'data-court="'+number+'" aria-label="'+esc(label)+'"></button></article>';
+ return '<article class="court '+(m?'occupied':'free')+'" data-court="'+number+'">'+header+(m?'<div class="court-match">'+matchup(m)+'</div>':'<div class="free-court-body">'+icon('plus')+'<span>Назначить встречу</span></div>')+button+'</article>';
 }
 function courtsDock(){
- return '<section class="courts-dock" aria-label="Постоянная панель кортов"><div class="courts-grid '+(state.settings.courts>4?'dense-courts':'')+'" style="--court-count:'+Math.min(4,state.settings.courts)+';--total-courts:'+state.settings.courts+'">'+Array.from({length:state.settings.courts},(_,i)=>courtCard(i+1)).join('')+'</div></section>';
+ const layout=courtDockSize==='full'?'courts-grid '+(state.settings.courts>4?'dense-courts':''):'courts-strip';
+ const size='<select id="court-dock-size" class="court-dock-size" aria-label="Размер панели кортов">'+planOptions(courtDockSizes,courtDockSize)+'</select>';
+ return '<section class="courts-dock courts-dock-'+courtDockSize+'" aria-label="Постоянная панель кортов">'+size+'<div class="'+layout+'" style="--court-count:'+Math.min(4,state.settings.courts)+';--total-courts:'+state.settings.courts+'">'+Array.from({length:state.settings.courts},(_,i)=>courtCard(i+1)).join('')+'</div></section>';
+}
+function autoCall(){
+ if(!state.started||state.closed||mode==='simulation'||mode==='real'&&(!editorReady||storageError))return;
+ const now=gameNow(),courts=freeCourts(),ordered=C.queue(state,now);
+ if(!courts.length||!ordered.length)return;
+ let count=0;
+ if(mutate(day=>{
+  for(const queued of ordered){
+   if(count===courts.length)break;
+   const match=day.matches.find(m=>m.id===queued.id);
+   if(C.matchAvailability(day,match).available){C.assign(day,match.id,courts[count],now);count++;}
+  }
+ }))toast('Вызвано встреч: '+count);
 }
 function queueRow(m,index,court=0){
  const availability=C.matchAvailability(state,m),canCall=availability.available&&freeCourts().length>0;
@@ -248,9 +276,11 @@ function dashboard(){
  if(state.closed)return heading('Очередь вызова','Все встречи сыграны. Результаты зафиксированы.')+summary();
  const all=C.queueItems(state,gameNow()),list=all.filter(m=>filter==='all'||m.category===filter);
  const ready=list.filter(m=>C.matchAvailability(state,m).available),waiting=list.filter(m=>!C.matchAvailability(state,m).available);
+ const autoCallButton=all.length&&mode!=='simulation'&&(mode!=='real'||editorReady&&!storageError)?
+  '<button class="btn primary small" data-action="auto-call" title="Вызвать доступные встречи всех категорий по порядку" '+(!freeCourts().length||!C.matchAvailability(state,all[0]).available?'disabled':'')+'>АВТОВЫЗОВ</button>':'';
  const interval=C.restInterval(state.settings);
  const restHelp='<span class="queue-help">'+(interval?'Рекомендуемый отдых · '+interval+' мин':'Отдых по плану · 0 мин')+'</span>';
- return (mode==='real'?liveForecast()+roundControls():'')+'<section class="queue-panel" id="queue"><div class="queue-toolbar"><div class="row"><h1>Очередь вызова</h1><span class="count">'+all.length+'</span></div><div class="filter-row">'+categoryFilters(filter,'filter')+'</div>'+restHelp+'</div><div class="queue-group-title"><strong>Можно вызвать <span>'+ready.length+'</span></strong><span>Отдых рядом с парой · подробности при наведении</span></div>'+ready.map((m,i)=>queueRow(m,i)).join('')+(!ready.length?'<div class="empty">Сейчас нет доступных встреч. Причины ожидания указаны ниже.</div>':'')+(waiting.length?'<div class="queue-group-title waiting-title"><strong>Ожидают <span>'+waiting.length+'</span></strong><span>Встречи ждут завершения предыдущих игр своих участников</span></div>'+waiting.map((m,i)=>queueRow(m,i)).join(''):'')+'</section><section class="progress-strip" style="--division-count:'+state.categories.length+'" aria-label="Прогресс турниров">'+state.categories.map(divisionCard).join('')+'</section><div class="queue-bottom">'+summary()+'<span>Порядок рекомендуемый. Вызов — по решению организатора.</span></div>';
+ return (mode==='real'?liveForecast()+roundControls():'')+'<section class="queue-panel" id="queue"><div class="queue-toolbar"><div class="row"><h1>Очередь вызова</h1><span class="count">'+all.length+'</span>'+autoCallButton+'</div><div class="filter-row">'+categoryFilters(filter,'filter')+'</div>'+restHelp+'</div><div class="queue-group-title"><strong>Можно вызвать <span>'+ready.length+'</span></strong><span>Отдых рядом с парой · подробности при наведении</span></div>'+ready.map((m,i)=>queueRow(m,i)).join('')+(!ready.length?'<div class="empty">Сейчас нет доступных встреч. Причины ожидания указаны ниже.</div>':'')+(waiting.length?'<div class="queue-group-title waiting-title"><strong>Ожидают <span>'+waiting.length+'</span></strong><span>Встречи ждут завершения предыдущих игр своих участников</span></div>'+waiting.map((m,i)=>queueRow(m,i)).join(''):'')+'</section><section class="progress-strip" style="--division-count:'+state.categories.length+'" aria-label="Прогресс турниров">'+state.categories.map(divisionCard).join('')+'</section><div class="queue-bottom">'+summary()+'<span>Порядок рекомендуемый. Вызов — по решению организатора.</span></div>';
 }
 
 function preparation(){
@@ -262,7 +292,10 @@ function participants(){
 }
 function results(){
  const list=doneMatches().filter(m=>filter==='all'||m.category===filter).sort((a,b)=>b.endedAt-a.endedAt);
- return heading('Результаты','Протоколы и исправления.','<button class="btn" data-action="history">'+icon('history')+'История <span class="count">'+state.history.length+'</span></button>')+'<div class="tabs">'+categoryFilters(filter,'filter')+'</div><section class="panel results-list">'+list.map(m=>'<article class="result-row">'+matchup(m)+'<div class="result-score"><strong>'+C.matchResult(state,m).wins.join(':')+'</strong><span>'+scoreText(m)+'</span></div><time>'+time(m.endedAt)+'</time><button class="btn" data-action="score" data-id="'+m.id+'">'+icon('edit')+'Исправить</button></article>').join('')+(list.length?'':'<div class="empty">Результатов пока нет.</div>')+'</section>';
+ return heading('Результаты','Протоколы и исправления.','<button class="btn" data-action="history">'+icon('history')+'История <span class="count">'+state.history.length+'</span></button>')+'<div class="tabs">'+categoryFilters(filter,'filter')+'</div><section class="panel results-list">'+list.map(m=>{
+  const result=C.matchResult(state,m),draw=result.winner===null;
+  return '<article class="result-row'+(draw?' draw':'')+'">'+matchup(m)+'<div class="result-score"><strong>'+result.wins.join(':')+'</strong><span>'+(draw?'Ничья · ':'')+scoreText(m)+'</span></div><time>'+time(m.endedAt)+'</time><button class="btn" data-action="score" data-id="'+m.id+'">'+icon('edit')+'Исправить</button></article>';
+ }).join('')+(list.length?'':'<div class="empty">Результатов пока нет.</div>')+'</section>';
 }
 
 function settings(){
@@ -342,8 +375,10 @@ function render(){
  }else if(!['dashboard','participants','standings','results','settings'].includes(view))view='dashboard';
  const screens={dashboard,participants,standings,results,settings,tournament:planner};
  const previous=$('#workspace-scroll')?.scrollTop||0;
+ const courtsScroll=$('.courts-strip')?.scrollLeft||0;
  $('#app').innerHTML='<div class="operator '+(state.started?'is-live':'is-preparation')+'">'+topbar()+appNotice()+(state.started&&!state.closed?courtsDock():'')+'<div class="workspace">'+nav()+'<main class="workspace-content" id="workspace-scroll">'+(storageError?'<div class="notice warn" role="alert">'+icon('info')+esc(storageError)+'</div>':'')+screens[view]()+'</main></div></div>';
  $('#workspace-scroll').scrollTop=previous;
+ const strip=$('.courts-strip');if(strip)strip.scrollLeft=courtsScroll;
 }
 
 function dialog(title,subtitle,body,actions=''){
@@ -354,7 +389,8 @@ function matchDetails(id){
  if(!match)return;
  const result=C.matchResult(state,match);
  if(!result.ok)return;
- const reason=result.wins[0]===result.wins[1]&&winReason[result.decidedBy]?'<p class="detail-decision">Победа '+winReason[result.decidedBy]+'</p>':'';
+ const reason=result.winner===null?'<p class="detail-decision">Ничья · По 0,5 очка</p>':
+  winReason[result.decidedBy]?'<p class="detail-decision">Победа '+winReason[result.decidedBy]+'</p>':'';
  dialog('Результат встречи',esc(categoryLabel(cat(match.category))+' · '+matchStage(match)),
   matchup(match,'detail-match',null,result.winner)+'<div class="detail-score"><strong>'+result.wins.join(':')+'</strong><span>'+scoreText(match)+'</span></div>'+reason,
   '<button class="btn" data-action="close">Закрыть</button>'+(!boardMode&&mode!=='simulation'&&!state.closed?'<button class="btn primary" data-action="score" data-id="'+match.id+'">'+icon('edit')+'Исправить результат</button>':''));
@@ -372,7 +408,7 @@ function showProgressTooltip(target){
  if(!game)return;
  hideProgressTooltip();progressAnchor=target;
  const tooltip=$('#progress-tooltip');
- tooltip.innerHTML='<strong>'+(game.won?'Победа':'Поражение')+' '+game.setsFor+':'+game.setsAgainst+' · Тур '+game.round+'</strong><span>Соперники: '+esc(surnames(game.opponentId))+'</span><span>'+game.scores.map(score=>score.join(':')).join(' · ')+'</span>';
+ tooltip.innerHTML='<strong>'+progressOutcome(game)+' '+game.setsFor+':'+game.setsAgainst+' · Тур '+game.round+'</strong><span>Соперники: '+esc(surnames(game.opponentId))+'</span><span>'+game.scores.map(score=>score.join(':')).join(' · ')+'</span>';
  tooltip.hidden=false;target.setAttribute('aria-describedby','progress-tooltip');
  const rect=target.getBoundingClientRect(),width=tooltip.offsetWidth,height=tooltip.offsetHeight;
  tooltip.style.left=Math.max(8,Math.min(rect.left,window.innerWidth-width-8))+'px';
@@ -399,7 +435,7 @@ function scoreDialog(id){
  if(!match)return;
  scoreMatchId=id;
  scoreAutoFill.clear();
- const correction=match.status==='done',values=correction?match.scores:[],format=C.formatOf(state,match.category);
+ const correction=match.status==='done',values=correction?match.scores:[],format=C.matchFormat(state,match);
  const columns=format.targets.length,grid=' style="--score-columns:'+columns+'"';
  const fields=side=>format.targets.map((target,i)=>
   '<input class="score-input" id="score-'+i+'-'+side+'" '+(i===0&&side===0?'autofocus ':'')+'inputmode="numeric" type="text" pattern="[0-9]{1,2}" maxlength="2" autocomplete="off" aria-label="'+esc(surnames(side===0?match.a:match.b))+' — партия '+(i+1)+'" placeholder="—" value="'+(values[i]?.[side]??'')+'">').join('');
@@ -416,7 +452,7 @@ function scoreDialog(id){
  $('#score-0-0').focus();
 }
 function scoreInputs(match){
- return C.formatOf(state,match.category).targets.map((target,i)=>({target,fields:[$('#score-'+i+'-0'),$('#score-'+i+'-1')]}));
+ return C.matchFormat(state,match).targets.map((target,i)=>({target,fields:[$('#score-'+i+'-0'),$('#score-'+i+'-1')]}));
 }
 function suggestedScore(value,target){
  if(!/^\d{1,2}$/.test(value))return '';
@@ -451,7 +487,7 @@ function scoreState(match){
 function updateScore(){
  const match=state.matches.find(m=>m.id===scoreMatchId);
  if(!match||!$('#dialog').open)return;
- const {games,winners,straight,result}=scoreState(match),wins=[0,0];
+ const {games,winners,straight,result}=scoreState(match),wins=[0,0],draw=result.ok&&result.winner===null;
  games.forEach(({fields},index)=>{
   const unused=index===2&&straight;
   if(!unused&&winners[index]>=0)wins[winners[index]]++;
@@ -464,14 +500,16 @@ function updateScore(){
  [0,1].forEach(side=>{
   const row=$('#score-team-'+side),counter=$('#score-wins-'+side);
   row.classList.toggle('match-winner',result.ok&&result.winner===side);
-  row.classList.toggle('match-loser',result.ok&&result.winner!==side);
+  row.classList.toggle('match-loser',result.ok&&!draw&&result.winner!==side);
+  row.classList.toggle('match-draw',draw);
   counter.textContent=String(wins[side]);
   counter.setAttribute('aria-label','Выиграно партий: '+wins[side]);
  });
  $('#score-lot-note').hidden=!result.needsLot;
  const announcement=$('#score-announcement');
- const message=result.ok?'Победа: '+surnames(result.winner===0?match.a:match.b)+' · '+result.wins.join(':')+
+ const message=draw?'Ничья 1:1 · По 0,5 очка':result.ok?'Победа: '+surnames(result.winner===0?match.a:match.b)+' · '+result.wins.join(':')+
   (winReason[result.decidedBy]?' · '+winReason[result.decidedBy]:''):'';
+ announcement.classList.toggle('draw',draw);
  if(announcement.textContent!==message)announcement.textContent=message;
  $('#score-error').textContent='';
  return {games,winners,result};
@@ -552,14 +590,6 @@ function drawDialog(){
  for(const c of state.categories)C.firstPairs(state.entries.filter(e=>e.category===c.id)).forEach(([a,b],i)=>draft.push({id:'round1-'+c.id+'-'+i,category:c.id,a,b,round:1,status:'queued',pinned:false}));
  dialog('Первый тур','Предварительный просмотр пар',draft.map(m=>'<div class="history-entry">'+matchup(m)+'</div>').join('')+'<p style="margin-top:17px;font-size:11px">После публикации составы фиксируются, встречи появляются в очереди. Для оценки в сценарии подготовки доступен первый тур.</p>',cancel+'<button class="btn primary" data-action="publish-draw">Опубликовать и начать'+icon('arrow')+'</button>');
 }
-function exportCsv(){
- const quote=v=>{let value=String(v);if(typeof v==='string'&&/^\s*[=+@-]/.test(value))value="'"+value;return '"'+value.replace(/"/g,'""')+'"';};
- const rows=T.standings(state,selectedCategory);
- const swiss=T.schemeOf(state,selectedCategory)==='swiss';
- const lines=[['Игрок 1','Игрок 2','Место','Очки',...(swiss?['Соперники','Побежденные']:[]),'Игры','Победы','Поражения','Партии выиграны','Партии проиграны','Игровые очки выиграны','Игровые очки проиграны','Разница воланов 1–2','Разница всех воланов','Отношение партий','Пропуски','Личная встреча','Равенство'],...rows.map(r=>[C.playerFullName(r.entry.players[0]),C.playerFullName(r.entry.players[1]),r.place??'',r.points,...(swiss?[coefficient(r.buchholz),coefficient(r.berger)]:[]),r.played,r.wins,r.losses,r.setsFor,r.setsAgainst,r.ballFor,r.ballAgainst,r.firstTwoDiff,r.ballFor-r.ballAgainst,ratioText(r.setsFor,r.setsAgainst),r.byes,r.headToHead?surnames(r.headToHead):'',r.tied?'Да':''])];
- const blob=new Blob(['\uFEFF'+lines.map(row=>row.map(quote).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'});
- const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='SwissCourt-'+(mode==='real'?'':'DEMO-')+selectedCategory+'-'+state.settings.date+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('CSV сохранён с очками, показателями и текущими местами.');
-}
 function switchScenario(value){mode=value==='prep'?'prep':'live';loadState();if(mode!=='real')C.ensureRoundRobinSchedule(state);lookupQuery='';filter='all';query='';view='dashboard';history.replaceState(null,'','?scenario='+mode+'#dashboard');render();toast(mode==='prep'?'Открыт отдельный сценарий подготовки':'Открыт сценарий идущего турнира');}
 document.addEventListener('click',event=>{
  const target=event.target.closest('[data-action]');if(!target)return;
@@ -569,6 +599,7 @@ document.addEventListener('click',event=>{
  case 'close':$('#dialog').close();break;
  case 'close-lookup':lookupQuery='';$('#player-lookup').value='';$('#player-lookup').setAttribute('aria-expanded','false');$('#lookup-results').hidden=true;break;
  case 'filter':filter=id;render();break;
+ case 'auto-call':autoCall();break;
  case 'category':selectedCategory=id;render();break;
  case 'simulation-pause':controlSimulation();break;
  case 'simulation-restart':controlSimulation(true);break;
@@ -611,7 +642,6 @@ document.addEventListener('click',event=>{
  case 'confirm-remove':if(mutate(s=>{if(s.started)throw Error('Состав уже зафиксирован.');s.entries=s.entries.filter(e=>e.id!==id);},'Участник удалён из состава'))$('#dialog').close();break;
  case 'draw':drawDialog();break;
  case 'publish-draw':if(mode==='real'){publishRealDraw();break;}if(mutate(s=>{if(s.started)throw Error('Тур уже опубликован.');s.matches=structuredClone(draft);s.started=true;C.ensureRoundRobinSchedule(s);},'Первый тур опубликован. Можно вызывать участников.')){$('#dialog').close();location.hash='dashboard';}break;
- case 'export':exportCsv();break;
  case 'board':{
   if(!storageError&&mode!=='simulation'&&mode!=='real'){try{localStorage.setItem(storageKey(),JSON.stringify(state));}catch(error){toast('Не удалось передать состояние табло. Хранилище недоступно.');return;}}
   const url=new URL(location.href);url.search='?scenario='+mode;url.hash='board';const tab=window.open(url.href,'swisscourt-board-'+mode);if(!tab)toast('Разрешите открытие новой вкладки для табло.');break;
@@ -655,6 +685,11 @@ document.addEventListener('focusin',event=>{
  if(event.target.classList?.contains('score-input'))event.target.select();
 });
 document.addEventListener('change',event=>{
+ if(event.target.id==='court-dock-size'&&Object.hasOwn(courtDockSizes,event.target.value)){
+  courtDockSize=event.target.value;
+  try{localStorage.setItem(courtDockSizeKey,courtDockSize);}catch{}
+  render();$('#court-dock-size')?.focus();
+ }
  if(event.target.id==='scenario'||event.target.id==='settings-scenario')switchScenario(event.target.value);
  if(event.target.id==='entry-category')$('#second-player').style.display=cat(event.target.value).doubles?'':'none';
  if(event.target.classList.contains('rounds-select'))mutate(s=>{if(s.started)throw Error('Число туров зафиксировано.');s.categories.find(c=>c.id===event.target.dataset.category).rounds=Number(event.target.value);},'Количество туров сохранено');

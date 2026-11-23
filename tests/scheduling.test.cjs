@@ -38,6 +38,23 @@ test('Swiss early pairs are identical under every remaining winner and contain o
   }
  }
 });
+test('an early Swiss pairing must also survive draws and is rechecked when the format starts allowing them',()=>{
+ const s=T.newDay();s.categories=[{...s.categories[0],scheme:'swiss',planned:9,scoreFormat:'two15'}];
+ for(let i=0;i<9;i++)s.entries.push({id:'p'+i,category:'md',players:[{name:'Имя Первая'+i,rating:2000-i*100},{name:'Имя Вторая'+i,rating:1950-i*100}]});
+ T.start(s);
+ for(const m of s.matches.slice(0,-2))finish(s,m,[[10,15],[10,15]]);
+ const early=A.plan(s,'md');
+ assert.equal(early.complete,false);
+ assert.equal(early.matches.length,1);
+ A.apply(s,early);
+ T.updateLiveCategory(s,'md','scoreFormat','two15Draw');
+ assert.ok(s.matches.every(m=>m.round===1));
+ assert.equal(A.plan(s,'md'),null);
+ for(const m of s.matches.filter(m=>m.status==='queued'))finish(s,m,[[15,11],[13,15]]);
+ const next=A.plan(s,'md');assert.equal(next.complete,true);
+ A.apply(s,next);T.validate(s);
+ assert.equal(s.matches.filter(m=>m.round===2).length,4);
+});
 test('early matches enter queue, can finish before the older round and survive sealing and recovery',()=>{
  const s=nearlyDone(),late=s.matches.at(-1);C.assign(s,late.id,1);
  const proposal=A.plan(s,'md');assert.ok(proposal.matches.length>0);A.apply(s,proposal);T.validate(s);
@@ -72,7 +89,7 @@ test('correcting an earlier winner invalidates uncalled early matches but preser
 test('new early queues cannot start an entrant before their own previous encounter finishes',()=>{
  const s=nearlyDone();A.apply(s,A.plan(s,'md'));
  const early=s.matches.find(m=>m.round===2),previous=s.matches.find(m=>m.round===1&&[m.a,m.b].includes(early.a));
- previous.status='queued';delete previous.scores;delete previous.endedAt;
+ previous.status='queued';delete previous.scores;delete previous.endedAt;delete previous.playedCourt;
  assert.equal(C.matchAvailability(s,early).available,false);assert.throws(()=>C.assign(s,early.id,2));
  early.status='playing';early.court=2;early.startedAt=1;assert.throws(()=>T.validate(s),/свою предыдущую/);
 });

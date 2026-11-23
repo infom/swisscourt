@@ -17,6 +17,75 @@ function groups(n,count,mode='single'){
   mode,slots:sizes.flatMap((size,group)=>size>=place?[{group,place}]:[])
  }))});
 }
+test('Swiss 2×15 awards half a point to both sides and ranks complete personal groups before coefficients',()=>{
+ const draw=[[15,11],[10,15]],format=C.scoreFormats.two15Draw;
+ assert.equal(C.validateScores(draw,{format}).winner,null);
+ assert.equal(C.validateScores([[15,12],[12,15]],{format}).decidedBy,'draw');
+ assert.equal(C.validateScores([[15,12],[15,13]],{format}).winner,0);
+ assert.equal(C.validateScores([[15,12]],{format}).ok,false);
+ assert.equal(C.validateScores(draw,{format:C.scoreFormats.two15}).winner,1);
+ assert.throws(()=>T.start(field(2,'circle',{scoreFormat:'two15Draw'})),/доступен в швейцарской/);
+ const candidates=()=>['a','b','c'].map((id,i)=>({entry:{id},points:2,buchholz:i,berger:i}));
+ const meeting=(a,b,scores)=>({a,b,scores,result:C.validateScores(scores,{format})});
+ const games=[meeting('a','b',[[15,13],[15,13]]),meeting('a','c',[[15,13],[0,15]]),meeting('b','c',draw)];
+ const rank=(rows,matches)=>C.rankStandings(rows,matches,true,true).map(r=>r.entry.id);
+ assert.deepEqual(rank(candidates(),games),['a','c','b'],'personal game difference precedes rally difference and coefficients');
+ assert.deepEqual(rank(candidates(),games.slice(0,2)),['c','b','a'],'incomplete groups start with the existing coefficients');
+ assert.deepEqual(rank(candidates().slice(0,2),[meeting('b','a',draw)]),['a','b'],'personal rallies precede coefficients at 1:1');
+ assert.deepEqual(rank(candidates().slice(0,2),[meeting('a','b',[[15,11],[11,15]])]),['b','a'],'equal personal rallies fall back to coefficients');
+});
+test('an eleven-pair Swiss event with draws plays five rounds and restores all results',()=>{
+ const state=field(11,'swiss',{rounds:5,scoreFormat:'two15Draw'});T.start(state);
+ for(let round=1;round<=5;round++){
+  const matches=state.matches.filter(m=>m.round===round);
+  assert.equal(matches.length,5);
+  for(const [index,m] of matches.entries())play(state,m,(index+round)%3?[[15,10],[15,11]]:[[15,9],[12,15]]);
+  T.validate(state);
+  if(round<5)A.apply(state,A.plan(state,'md'));
+ }
+ const rows=T.standings(state,'md');
+ assert.equal(rows.reduce((sum,row)=>sum+row.points,0),30);
+ assert.equal(rows.reduce((sum,row)=>sum+row.draws,0),16);
+ assert.ok(rows.every(row=>row.played===row.wins+row.draws+row.losses&&row.points===row.wins+row.draws/2+row.byes));
+ assert.equal(new Set(state.byes.map(b=>b.entryId)).size,5);
+ assert.equal(new Set(state.matches.map(m=>[m.a,m.b].sort().join('|'))).size,25);
+ state.closed=true;assert.deepEqual(T.standings(D.decode(JSON.stringify(state)),'md'),rows);
+});
+test('the draw format is selectable in Swiss planning and renders a yellow result on both displays',()=>{
+ const s=field(4,'swiss',{rounds:3,scoreFormat:'two15'}),{parse}=require('node-html-parser');
+ const prepare=boot({realState:s,hash:'#tournament'});
+ assert.ok(parse(prepare.html()).querySelector('[data-plan="scoreFormat"] option[value="two15Draw"]'));
+ prepare.change({plan:'scoreFormat',index:'0'},'two15Draw');
+ const configured=D.decode(prepare.storage.get(D.key));
+ prepare.change({plan:'scheme',index:'0'},'circle');
+ assert.equal(D.decode(prepare.storage.get(D.key)).categories[0].scoreFormat,'two15');
+ assert.equal(parse(prepare.html()).querySelector('[data-plan="scoreFormat"] option[value="two15Draw"]'),null);
+ T.start(configured);
+ const [m]=configured.matches;C.assign(configured,m.id,1);
+ const ui=boot({realState:configured,hash:'#dashboard'});
+ ui.click({action:'score',id:m.id});
+ for(const [input,value] of [['0-0',15],['0-1',11],['1-0',10],['1-1',15]])ui.input('#score-'+input,value);
+ assert.match(ui.node('#score-announcement').textContent,/Ничья 1:1 · По 0,5 очка/);
+ assert.equal(ui.node('#score-team-0').classList.contains('match-loser'),false);
+ assert.equal(ui.node('#score-team-1').classList.contains('match-draw'),true);
+ ui.click({action:'save-score'});
+ const saved=D.decode(ui.storage.get(D.key));
+ assert.equal(saved.matches[0].status,'done');
+ assert.equal(saved.matches[0].lotWinner,undefined);
+ const [a,b]=[m.a,m.b].map(id=>T.standings(saved,'md').find(r=>r.entry.id===id));
+ assert.deepEqual([a,b].map(r=>[r.points,r.wins,r.draws,r.losses,r.berger]),[[0.5,0,1,0,0.25],[0.5,0,1,0,0.25]]);
+ assert.equal(b.place,1);
+ ui.run('view="standings";render()');
+ assert.equal(parse(ui.html()).querySelectorAll('button.game-result.draw').length,2);
+ assert.match(ui.html(),/<strong>0,5<\/strong>/);
+ ui.run('view="results";render()');
+ assert.match(ui.html(),/result-row draw/);
+ const board=boot({realState:saved,hash:'#board'});
+ assert.equal(parse(board.html()).querySelectorAll('span.game-result.draw').length,2);
+ const updated=structuredClone(saved);T.updateLiveCategory(updated,'md','scoreFormat','best15');
+ assert.equal(C.matchResult(updated,updated.matches[0]).winner,null);
+ assert.equal(T.standings(updated,'md').find(r=>r.entry.id===m.a).points,0.5);
+});
 function play(state,match,scores=win){
  C.assign(state,match.id,1,Date.parse(state.settings.date+'T10:00:00'));
  T.finish(state,match.id,scores,Date.parse(state.settings.date+'T10:20:00'));
@@ -161,7 +230,6 @@ test('planner accepts a rental duration and starts the clock only when the draw 
  ui.input('#plan-rental-minutes','2:70');
  assert.match(ui.node('#plan-overview').innerHTML,/Укажите число кортов/);
  ui.input('#plan-rental-minutes','2:30');
- ui.click({action:'save-plan'});
  assert.equal(D.decode(ui.storage.get(D.key)).settings.rentalMinutes,150);
  ui.run('view="participants";render()');ui.click({action:'prepare-draw'});ui.click({action:'draw'});
  assert.equal(D.decode(ui.storage.get(D.key)).startedAt,undefined);
@@ -180,12 +248,10 @@ test('planner saves zero rest, recalculates the forecast and skips short-rest wa
  for(const invalid of ['','-1','2.5']){
   ui.input('#plan-rest-minutes',invalid);
   assert.match(ui.node('#plan-overview').innerHTML,/Укажите отдых целым числом/);
-  ui.click({action:'save-plan'});
   assert.equal(D.decode(ui.storage.get(D.key)).settings.restMinutes,15);
  }
  ui.input('#plan-rest-minutes','0');
  assert.match(ui.node('#plan-overview').innerHTML,/1:00/);
- ui.click({action:'save-plan'});
  const saved=D.decode(ui.storage.get(D.key));
  assert.equal(saved.settings.restMinutes,0);
  const launch=1800000000000;
@@ -202,6 +268,27 @@ test('planner saves zero rest, recalculates the forecast and skips short-rest wa
  live.run('state.settings.restMinutes=10;assignDialog('+JSON.stringify(candidate)+')');
  assert.match(live.node('#dialog').innerHTML,/Рекомендуемый отдых · 10 мин/);
  assert.match(live.node('#dialog').innerHTML,/activity-critical/);
+});
+test('live Swiss round count follows actual roster and discards only unstarted extra rounds',()=>{
+ const s=field(9,'swiss',{planned:4,rounds:3});T.start(s);
+ const ui=boot({realState:s,hash:'#tournament'});
+ ui.change({plan:'rounds',index:'0'},'5');
+ const extended=D.decode(ui.storage.get(D.key));
+ assert.equal(T.roundCount(extended,'md'),5);
+ assert.equal(P.estimate(extended,{actual:true}).count,20);
+ for(let round=1;round<=3;round++){
+  for(const match of extended.matches.filter(m=>m.round===round))play(extended,match);
+  A.apply(extended,A.plan(extended,'md'));
+ }
+ const running=structuredClone(extended);
+ C.assign(running,running.matches.find(m=>m.round===4).id,1);
+ assert.throws(()=>T.updateLiveCategory(running,'md','rounds',3),/уже вызваны/);
+ const reduce=boot({realState:extended,hash:'#tournament'});
+ reduce.change({plan:'rounds',index:'0'},'3');
+ const saved=D.decode(reduce.storage.get(D.key));
+ assert.equal(T.roundStatus(saved,'md').complete,true);
+ assert.deepEqual(saved.matches,extended.matches.filter(m=>m.round<=3));
+ assert.deepEqual(saved.byes,extended.byes.filter(b=>b.round<=3));
 });
 test('requested court is assigned directly and score entry keeps manual values and a deciding game',()=>{
  const state=field(2,'circle');T.start(state);
@@ -258,7 +345,7 @@ test('vertical keys keep focus in the same game and a deuce requires both sides'
 });
 test('Enter completes scores two below the target in every format, including a decider to 11',()=>{
  for(const [scoreFormat,format] of Object.entries(C.scoreFormats)){
-  const state=field(2,'circle',{scoreFormat});T.start(state);
+  const state=format.allowsDraw?field(4,'swiss',{scoreFormat,rounds:3}):field(2,'circle',{scoreFormat});T.start(state);
   const match=state.matches[0];C.assign(state,match.id,1);
   const ui=boot({realState:state});ui.click({action:'score',id:match.id});
   const losers=scoreFormat==='shortFinal'?[0,1,0]:[0,0];
@@ -299,7 +386,7 @@ test('planner saves a preset, publishes the previewed draw and shows all five ca
  const state=groups(12,4,'bronze');
  const ui=boot({realState:state,hash:'#plan'});
  assert.match(ui.html(),/Три сетки с бронзой/);assert.match(ui.html(),/<strong>24<\/strong><small>Игр всего/);
- ui.change({plan:'preset',index:'0'},'triple');ui.click({action:'save-plan'});
+ ui.change({plan:'preset',index:'0'},'triple');
  ui.run('view="participants";render()');ui.click({action:'prepare-draw'});ui.click({action:'draw'});
  const preview=ui.run('JSON.stringify(realDraft.next.drawOrders)');
  ui.click({action:'publish-draw'});assert.equal(ui.run('JSON.stringify(state.drawOrders)'),preview);

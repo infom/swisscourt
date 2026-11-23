@@ -104,6 +104,15 @@ function downloadFile(name,content,type){
  const url=URL.createObjectURL(new Blob([content],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
 function backup(){downloadFile('SwissCourt-'+state.settings.date+'.json',JSON.stringify(state,null,2),'application/json');}
+function exportProtocol(){
+ if(mode!=='real'||!state.closed)return;
+ try{
+  const protocol=SwissCourtProtocol.create(state,appVersion),league=protocol.event.league;
+  const tour=league?'tour-'+league.tour+'-'+league.level+'-':'';
+  downloadFile('SwissCourt-protocol-'+tour+state.settings.date+'.json',JSON.stringify(protocol,null,2)+'\n','application/json;charset=utf-8');
+  toast('Протокол тура сохранён.');
+ }catch(error){toast(error.message);}
+}
 function sendLeagueResults(){
  if(mode!=='real'||!state.closed)return;
  const rows=[['Разряд','Группа','Игрок 1','Игрок 2','Место']];
@@ -230,7 +239,11 @@ function confirmRosterImport(){
    const name=target.name===oldDivision.name||target.name===target.code?division.name:target.name;
    Object.assign(target,{division:division.id,code:division.code,short:division.short,name});
   }else if(!importTargets(data).some(item=>item.id===category))throw Error('Выберите подходящую категорию.');
-  if(data.selection)updateLeagueRoster(day,data,category);
+  if(data.selection){
+   const settings=day.settings;
+   if(!day.entries.some(entry=>entry.leagueSource)&&!settings.restMinutesCustom&&C.restInterval(settings)===C.restInterval())settings.restMinutes=5;
+   updateLeagueRoster(day,data,category);
+  }
   else day.entries.push(...data.entries.map(entry=>({id:crypto.randomUUID(),category,players:entry.players})));
  },'Состав сохранён.');
  if(saved){$('#dialog').close();view='participants';rosterCategory=category;rosterSelected.clear();swapSelection=null;query='';
@@ -247,13 +260,15 @@ document.addEventListener('click',event=>{
  case 'offer-redraw':offerRedraw(id);break;
  case 'redraw':if(mutate(s=>T.redraw(s,id),'Тур пересчитан.'))$('#dialog').close();break;
  case 'backup':backup();break;
+ case 'export-protocol':exportProtocol();break;
  case 'send-league-results':sendLeagueResults();break;
- case 'new-day':dialog('Создать новый день?','Текущий день будет заменён','<p>Сначала сохраните резервную копию или CSV результатов. Демонстрационные сценарии хранятся отдельно.</p>','<button class="btn" data-action="backup">Скачать копию</button>'+cancel+'<button class="btn primary" data-action="confirm-new-day">Создать новый день</button>');break;
+ case 'new-day':dialog('Создать новый день?','Текущий день будет заменён','<p>Сначала сохраните резервную копию. Протокол завершённого тура можно скачать в таблицах. Демонстрационные сценарии хранятся отдельно.</p>','<button class="btn" data-action="backup">Скачать копию</button>'+cancel+'<button class="btn primary" data-action="confirm-new-day">Создать новый день</button>');break;
  case 'confirm-new-day':if(persist(T.newDay())){$('#dialog').close();view='tournament';filter='all';query='';lookupQuery='';rosterCategory='';rosterSelected.clear();location.hash='tournament';render();}break;
  case 'close-day':{
   if(!state.categories.every(c=>T.roundStatus(state,c.id).complete)){toast('Сначала завершите все встречи.');return;}
   const tied=state.categories.filter(c=>T.standings(state,c.id).some(r=>r.tied));
-  dialog('Зафиксировать результаты?','Результаты сохранятся',tied.length?'<p>В разрядах '+tied.map(c=>c.code).join(', ')+' есть разделённые места. Они сохранятся в итогах.</p>':'<p>Все встречи завершены. Итоговые места и CSV доступны в таблицах.</p>',cancel+'<button class="btn primary" data-action="confirm-close-day">Завершить</button>');break;
+  dialog('Зафиксировать результаты?','Результаты сохранятся',(tied.length?'<p>В разрядах '+tied.map(c=>c.code).join(', ')+' есть разделённые места. Они сохранятся в итогах.</p>':'')+
+   '<p>После завершения можно скачать протокол тура в таблицах.</p>',cancel+'<button class="btn primary" data-action="confirm-close-day">Завершить</button>');break;
  }
  case 'confirm-close-day':if(state.categories.every(c=>T.roundStatus(state,c.id).complete)&&persist({...state,closed:true})){$('#dialog').close();render();}break;
  case 'reopen-day':if(persist({...state,closed:false}))render();break;

@@ -1,10 +1,11 @@
 'use strict';
+const progressOutcome=game=>game.draw?'Ничья':game.won?'Победа':'Поражение';
 function progressLabel(game){
  if(game.pass)return 'Пропуск круга сетки';
  if(game.bye)return 'Тур '+game.round+' · Пропуск · +1 очко';
  if(game.playing)return 'На корте '+game.court;
  if(game.pending)return 'Встреча ещё не сыграна';
- return (game.won?'Победа':'Поражение')+' · '+surnames(game.opponentId)+' · '+game.scores.map(score=>score.join(':')).join(', ');
+ return progressOutcome(game)+(game.draw?' · +0,5 очка':'')+' · '+surnames(game.opponentId)+' · '+game.scores.map(score=>score.join(':')).join(', ');
 }
 function resultBlock(game,id){
  const label=esc(progressLabel(game)),aria=' title="'+label+'" aria-label="'+label+'"';
@@ -16,7 +17,7 @@ function resultBlock(game,id){
  const display=C.shortScore(game.scores).split(';').map((part,i,parts)=>'<span class="game-score-line">'+
   '<span>'+(part.startsWith('−')?'−':'')+'</span><span>'+part.replace('−','')+'</span><span>'+(i<parts.length-1?';':'')+'</span></span>').join('');
  const action=boardMode?'':' data-action="match-details" data-id="'+game.matchId+'" data-entry="'+esc(id)+'"';
- return '<'+tag+' class="game-result '+(game.won?'win':'loss')+(game.deciding?' deciding':'')+'"'+action+aria+
+ return '<'+tag+' class="game-result '+(game.draw?'draw':game.won?'win':'loss')+(game.deciding?' deciding':'')+'"'+action+aria+
   '><span class="block-score">'+display+'</span>'+(game.deciding?'<sup aria-hidden="true">3</sup>':'')+'</'+tag+'>';
 }
 function gameProgress(id,group){
@@ -29,8 +30,9 @@ function gameProgress(id,group){
  return '<div class="game-progress" aria-label="Сыграно встреч: '+played.filter(game=>!game.bye).length+'">'+
   (games.length?games.map(game=>resultBlock(game,id)).join(''):resultBlock({pending:true},id))+'</div>';
 }
-function progressLegend(){
+function progressLegend(drawRules){
  return '<div class="progress-legend" aria-label="Обозначения результатов"><span><i class="game-result win"></i>Победа</span><span><i class="game-result loss"></i>Поражение</span>'+
+  (drawRules?'<span><i class="game-result draw"></i>Ничья</span>':'')+
   '<span><i class="deciding-key">3</i>Три партии</span><span><i class="game-result playing">7</i>Корт</span><span><i class="game-result bye">–</i>Пропуск</span></div>';
 }
 const coefficient=value=>value===Infinity?'∞':Number(value||0).toLocaleString('ru-RU',{maximumFractionDigits:2});
@@ -38,15 +40,19 @@ const difference=value=>value>0?'+'+value:String(value||0);
 const ratioText=(a,b)=>coefficient(b?a/b:(a?Infinity:0));
 const circleRankingOrder='Очки → личные встречи → разница партий в личных встречах → разница воланов в личных встречах → разница партий во всех встречах → разница воланов во всех встречах → меньший рейтинг';
 const swissRankingOrder='Очки → Соперники → Побеждённые → личная встреча двух равных → отношение партий → разница воланов первых двух партий → разница всех воланов';
+const swissDrawRankingOrder='Очки → разница геймов в личных встречах → разница воланов в личных встречах → Соперники → Побеждённые → отношение партий → разница воланов первых двух партий → разница всех воланов. Личные показатели сравниваются, если все пары с равными очками сыграли друг с другом.';
 function statsFor(row,scheme){
+ const drawRules=scheme==='swiss'&&C.usesDrawRules(state,row.entry.category);
  const stats=[
-  ['Игры',row.played],['Победы',row.wins],['Поражения',row.losses],['Турнирные очки',row.points],
+  ['Игры',row.played],['Победы',row.wins],...(drawRules?[['Ничьи',row.draws]]:[]),['Поражения',row.losses],['Турнирные очки',coefficient(row.points)],
   ['Партии',row.setsFor+':'+row.setsAgainst],['Разница партий',difference(row.setsFor-row.setsAgainst)],['Отношение партий',ratioText(row.setsFor,row.setsAgainst)],
   ['Воланы',row.ballFor+':'+row.ballAgainst],['Разница воланов 1–2-й партий',difference(row.firstTwoDiff)],
   ['Разница всех воланов',difference(row.ballFor-row.ballAgainst)],['Рейтинг',C.rating(row.entry)]
  ];
  if(scheme==='swiss')stats.push(['Соперники',coefficient(row.buchholz)],['Побеждённые',coefficient(row.berger)],['Пропуски',row.byes],
-  ['Очки условных соперников за пропуск',coefficient(row.byeOpponentPoints)],['Личная встреча',row.headToHead?surnames(row.headToHead)+' · победа':'—']);
+  ['Очки условных соперников за пропуск',coefficient(row.byeOpponentPoints)]);
+ if(scheme==='swiss'&&!drawRules)stats.push(['Личная встреча',row.headToHead?surnames(row.headToHead)+' · победа':'—']);
+ if(row.headToHeadGames!==undefined)stats.push(['Разница геймов в личных встречах',difference(row.headToHeadGames)],['Разница воланов в личных встречах',difference(row.headToHeadRallies)]);
  if(row.personalPoints!==undefined)stats.push(['Побед среди равных',row.personalPoints],['Разница партий среди равных',difference(row.personalSets)],['Разница воланов среди равных',difference(row.personalBalls)]);
  if(row.qualificationLot)stats.push(['Порядок выхода из группы','Жребий при равенстве']);
  return stats;
@@ -55,18 +61,21 @@ function showEntryStats(id,group){
  const player=entry(id);
  if(!player)return;
  const scheme=T.schemeOf(state,player.category);
+ const drawRules=scheme==='swiss'&&C.usesDrawRules(state,player.category);
  const rows=group===undefined?T.standings(state,player.category):T.groupStandings(state,player.category)[Number(group)];
  const row=rows?.find(r=>r.entry.id===id);
  if(row)dialog('Показатели участника',esc(surnames(id)), '<dl class="stats-list">'+
   statsFor(row,scheme).map(([name,value])=>'<div><dt>'+name+'</dt><dd>'+esc(value)+'</dd></div>').join('')+
-  '</dl><p class="table-note">'+(scheme==='swiss'?swissRankingOrder:scheme==='circle'||group!==undefined?circleRankingOrder:'Места определяются результатами сеток.')+'</p>',cancel);
+  '</dl><p class="table-note">'+(scheme==='swiss'?(drawRules?swissDrawRankingOrder:swissRankingOrder):scheme==='circle'||group!==undefined?circleRankingOrder:'Места определяются результатами сеток.')+'</p>',cancel);
 }
 function standingsTable(id,isBoard=false,rows=T.standings(state,id),group){
  const scheme=T.schemeOf(state,id),swiss=scheme==='swiss';
+ const drawRules=swiss&&C.usesDrawRules(state,id);
  const coefficients=swiss&&(!isBoard||state.categories.length<=2);
  const playoff=T.isBracket(state,id)&&group===undefined;
  const header=coefficients?'<th class="numeric tiebreak-col">Соперники</th><th class="numeric tiebreak-col">Побежденные</th>':'';
- const extras=!isBoard?'<th class="numeric" title="Игры">И</th><th class="numeric" title="Победы">В</th><th class="numeric" title="Поражения">П</th>'+
+ const extras=!isBoard?'<th class="numeric" title="Игры">И</th><th class="numeric" title="Победы">В</th>'+
+  (drawRules?'<th class="numeric" title="Ничьи">Н</th>':'')+'<th class="numeric" title="Поражения">П</th>'+
   '<th class="numeric">Партии</th><th class="numeric">Воланы</th><th class="numeric" title="Разница воланов первых двух партий">Δ 1–2</th><th class="numeric">Δ все</th><th>Показатели</th>':'';
  return '<div class="table-wrap"><table class="standings-table"><thead><tr><th class="place-col">№</th><th>Участник</th><th class="progress-col">Прогресс</th>'+
   (!playoff?'<th class="numeric points-col">Очки</th>':'')+header+extras+'</tr></thead><tbody>'+rows.map(row=>{
@@ -74,9 +83,10 @@ function standingsTable(id,isBoard=false,rows=T.standings(state,id),group){
    const players=entry(participant).players.map(p=>'<span>'+esc(C.playerLabel(state,p))+'</span>').join('<span class="teammate-divider"> / </span>');
    const position=leader?'<span class="leader-mark" aria-label="Первое место">'+icon('crown')+'<small>1'+(row.tied?'=':'')+'</small></span>':
     '<span class="place">'+place+(row.tied?'=':'')+'</span>';
-   const points=!playoff?'<td class="numeric points-col"><strong>'+row.points+'</strong></td>':'';
+   const points=!playoff?'<td class="numeric points-col"><strong>'+coefficient(row.points)+'</strong></td>':'';
    const coeff=coefficients?'<td class="numeric tiebreak-col">'+coefficient(row.buchholz)+'</td><td class="numeric tiebreak-col">'+coefficient(row.berger)+'</td>':'';
-   const details=isBoard?'':'<td class="numeric">'+row.played+'</td><td class="numeric">'+row.wins+'</td><td class="numeric">'+row.losses+'</td>'+
+   const details=isBoard?'':'<td class="numeric">'+row.played+'</td><td class="numeric">'+row.wins+'</td>'+
+    (drawRules?'<td class="numeric">'+row.draws+'</td>':'')+'<td class="numeric">'+row.losses+'</td>'+
     '<td class="numeric">'+row.setsFor+':'+row.setsAgainst+'</td><td class="numeric">'+row.ballFor+':'+row.ballAgainst+'</td>'+
     '<td class="numeric">'+difference(row.firstTwoDiff)+'</td><td class="numeric">'+difference(row.ballFor-row.ballAgainst)+'</td>'+
     '<td><button class="btn small" data-action="entry-stats" data-id="'+participant+'" '+(group!==undefined?'data-group="'+group+'"':'')+' aria-label="Показатели '+esc(surnames(participant))+'">Подробнее</button></td>';
@@ -226,12 +236,13 @@ function divisionContent(id,isBoard){
 }
 function standings(){
  const id=selectedCategory,scheme=T.schemeOf(state,id);
+ const drawRules=scheme==='swiss'&&C.usesDrawRules(state,id);
  return heading('Турнирные таблицы','Положение и показатели по завершённым встречам.',
- '<button class="btn" data-action="export">'+icon('download')+'CSV · '+esc(cat(id).code)+'</button>'+
+ (mode==='real'&&state.closed?'<button class="btn" data-action="export-protocol">'+icon('download')+'Скачать протокол тура</button>':'')+
  (mode==='real'&&state.closed?'<button class="btn primary" data-action="send-league-results">Передать в Лигу 8Я</button>':''))+
  '<div class="tabs">'+categoryFilters(id,'category',false)+'</div><section class="panel"><div class="panel-heading">'+badge(id)+
  '<strong>'+esc(stageSummary(id))+'</strong>'+
  (state.started&&T.isBracket(state,id)?'<button class="btn small" data-action="full-bracket" data-id="'+id+'">Полная сетка</button>':'')+
- '</div>'+divisionContent(id,false)+progressLegend()+'</section><p class="table-note">'+
- (scheme==='swiss'?swissRankingOrder:scheme==='circle'||scheme==='groups'?circleRankingOrder:'Места по результатам сеток.')+'</p>';
+ '</div>'+divisionContent(id,false)+progressLegend(drawRules)+'</section><p class="table-note">'+
+ (scheme==='swiss'?(drawRules?swissDrawRankingOrder:swissRankingOrder):scheme==='circle'||scheme==='groups'?circleRankingOrder:'Места по результатам сеток.')+'</p>';
 }

@@ -75,6 +75,7 @@ function entryProgress(state,id){
    const result=matchResult(state,m);if(!result.ok)return [];
    const side=m.a===id?0:1;
    return [{matchId:m.id,round:m.round,opponentId:side===0?m.b:m.a,won:result.winner===side,
+    ...(result.winner===null?{draw:true}:{}),
     setsFor:result.wins[side],setsAgainst:result.wins[1-side],deciding:m.scores.length===3,
     scores:m.scores.map(game=>[game[side],game[1-side]])}];
   });
@@ -110,11 +111,16 @@ const scoreFormats={
  two21:{label:'2×21',targets:[21,21],minutes:18},
  shortFinal:{label:'2×21+11',targets:[21,21,11],minutes:19},
  best15:{label:'3×15',targets:[15,15,15],minutes:16},
- two15:{label:'2×15',targets:[15,15],minutes:13}
+ two15:{label:'2×15',targets:[15,15],minutes:13},
+ two15Draw:{label:'2×15 с ничьей',targets:[15,15],minutes:13,allowsDraw:true}
 };
 function formatOf(state,category){
  const key=state.categories.find(c=>c.id===category)?.scoreFormat;
  return Object.hasOwn(scoreFormats,key)?scoreFormats[key]:scoreFormats.classic;
+}
+function matchFormat(state,match){return Object.hasOwn(scoreFormats,match.scoreFormat)?scoreFormats[match.scoreFormat]:formatOf(state,match.category);}
+function usesDrawRules(state,category){
+ return !!(formatOf(state,category).allowsDraw||state.matches.some(m=>m.category===category&&scoreFormats[m.scoreFormat]?.allowsDraw));
 }
 const capOf=target=>({21:30,15:21,11:15})[target];
 const blank=value=>value===''||value==null;
@@ -140,6 +146,7 @@ function validateScores(raw,{format=scoreFormats.classic,ratings=[0,0],lotWinner
  }
  if(wins.includes(2))return {ok:true,scores,wins,balls,winner:wins[0]===2?0:1,decidedBy:'sets'};
  if(format.targets.length===2&&scores.length===2){
+  if(format.allowsDraw)return {ok:true,scores,wins,balls,winner:null,decidedBy:'draw'};
   if(balls[0]!==balls[1])return {ok:true,scores,wins,balls,winner:balls[0]>balls[1]?0:1,decidedBy:'balls'};
   if(ratings[0]!==ratings[1])return {ok:true,scores,wins,balls,winner:ratings[0]<ratings[1]?0:1,decidedBy:'rating'};
   if(lotWinner===0||lotWinner===1)return {ok:true,scores,wins,balls,winner:lotWinner,decidedBy:'lot'};
@@ -149,7 +156,7 @@ function validateScores(raw,{format=scoreFormats.classic,ratings=[0,0],lotWinner
 }
 function matchResult(state,match,scores=match.scores,lotWinner=match.lotWinner){
  return validateScores(scores,{
-  format:formatOf(state,match.category),
+  format:matchFormat(state,match),
   ratings:[match.a,match.b].map(id=>rating(state.entries.find(e=>e.id===id))),
   lotWinner
  });
@@ -194,11 +201,16 @@ function finish(state,id,raw,now=Date.now()){
  if(correction)state.history.unshift({matchId:id,old:match.scores,new:result.scores,at:now,
   ...(match.lotWinner!==undefined?{oldLot:match.lotWinner}:{}),...(result.decidedBy==='lot'?{newLot:result.winner}:{})});
  if(result.decidedBy==='lot')match.lotWinner=result.winner;else delete match.lotWinner;
- match.scores=result.scores;match.status='done';if(!correction)match.endedAt=now;delete match.court;
+ match.scores=result.scores;match.status='done';
+ if(!correction){
+  match.endedAt=now;
+  if(Number.isInteger(match.court))match.playedCourt=match.court;
+ }
+ delete match.court;
  return result;
 }
 function returnToQueue(state,id){const match=state.matches.find(m=>m.id===id);if(!match||match.status!=='playing')throw Error('Встреча уже не находится на корте.');match.status='queued';delete match.court;delete match.startedAt;}
-function rankStandings(rows,done,swiss=true){
+function rankStandings(rows,done,swiss=true,drawRules=false){
  // Resolve whole tied groups at each step. Head-to-head is not a pairwise sort:
  // applying it inside a three-way tie would produce a non-transitive order.
  function split(groups,compare){
@@ -214,13 +226,27 @@ function rankStandings(rows,done,swiss=true){
  const descending=key=>(a,b)=>b[key]-a[key];
  let groups=split([rows],descending('points'));
  if(swiss){
+  if(drawRules)groups=groups.flatMap(group=>{
+   if(group.length<2)return [group];
+   const byEntry=new Map(group.map(row=>[row.entry.id,row]));
+   const meetings=done.filter(m=>byEntry.has(m.a)&&byEntry.has(m.b));
+   // An incomplete group would give its participants different sets of personal opponents.
+   if(meetings.length!==group.length*(group.length-1)/2)return [group];
+   for(const row of group){row.headToHeadGames=0;row.headToHeadRallies=0;}
+   for(const {a,b,result} of meetings){
+    const games=result.wins[0]-result.wins[1],rallies=result.balls[0]-result.balls[1];
+    byEntry.get(a).headToHeadGames+=games;byEntry.get(b).headToHeadGames-=games;
+    byEntry.get(a).headToHeadRallies+=rallies;byEntry.get(b).headToHeadRallies-=rallies;
+   }
+   return split(split([group],descending('headToHeadGames')),descending('headToHeadRallies'));
+  });
   groups=split(groups,descending('buchholz'));
   groups=split(groups,descending('berger'));
-  groups=groups.flatMap(group=>{
+  if(!drawRules)groups=groups.flatMap(group=>{
    if(group.length!==2)return [group];
    const [a,b]=group,meeting=done.filter(m=>[m.a,m.b].includes(a.entry.id)&&[m.a,m.b].includes(b.entry.id));
    if(meeting.length!==1)return [group];
-   const result=meeting[0].result||validateScores(meeting[0].scores);if(!result.ok)return [group];
+   const result=meeting[0].result||validateScores(meeting[0].scores);if(!result.ok||result.winner===null)return [group];
    const winner=result.winner===0?meeting[0].a:meeting[0].b;
    group.forEach(row=>row.headToHead=winner);
    return group[0].entry.id===winner?[[group[0]],[group[1]]]:[[group[1]],[group[0]]];
@@ -241,21 +267,35 @@ function rankStandings(rows,done,swiss=true){
  });
 }
 function standings(state,category){
- const rows=state.entries.filter(e=>e.category===category).map(e=>({entry:e,played:0,wins:0,losses:0,points:0,byes:0,setsFor:0,setsAgainst:0,ballFor:0,ballAgainst:0,firstTwoDiff:0,buchholz:0,berger:0}));
+ const rows=state.entries.filter(e=>e.category===category).map(e=>({entry:e,played:0,wins:0,draws:0,losses:0,points:0,byes:0,setsFor:0,setsAgainst:0,ballFor:0,ballAgainst:0,firstTwoDiff:0,buchholz:0,berger:0}));
  const map=new Map(rows.map(r=>[r.entry.id,r]));
  const done=state.matches.filter(m=>m.category===category&&m.status==='done'&&map.has(m.a)&&map.has(m.b)).map(m=>({...m,result:matchResult(state,m)})).filter(m=>m.result.ok);
- for(const m of done){const result=m.result;for(let side=0;side<2;side++){const r=map.get(side===0?m.a:m.b);r.played++;r.wins+=result.winner===side?1:0;r.losses+=result.winner!==side?1:0;r.points=r.wins;r.setsFor+=result.wins[side];r.setsAgainst+=result.wins[1-side];for(const [index,game] of m.scores.entries()){r.ballFor+=game[side];r.ballAgainst+=game[1-side];if(index<2)r.firstTwoDiff+=game[side]-game[1-side];}}}
+ const matchPoints=(result,side)=>result.winner===null?0.5:Number(result.winner===side);
+ for(const m of done){
+  const result=m.result;
+  for(const [side,id] of [m.a,m.b].entries()){
+   const r=map.get(id),points=matchPoints(result,side);
+   r.played++;r.wins+=Number(points===1);r.draws+=Number(points===0.5);r.losses+=Number(points===0);r.points+=points;
+   r.setsFor+=result.wins[side];r.setsAgainst+=result.wins[1-side];
+   r.ballFor+=result.balls[side];r.ballAgainst+=result.balls[1-side];
+   for(const game of m.scores.slice(0,2))r.firstTwoDiff+=game[side]-game[1-side];
+  }
+ }
  // A bye grants a point without creating a game, a win or synthetic scores.
  for(const bye of state.byes||[]){const row=map.get(bye.entryId);if(row){row.points++;row.byes++;}}
- for(const m of done){const a=map.get(m.a),b=map.get(m.b),result=m.result;a.buchholz+=b.points;b.buchholz+=a.points;if(result.winner===0)a.berger+=b.points;else b.berger+=a.points;}
+ for(const m of done){
+  const a=map.get(m.a),b=map.get(m.b);
+  a.buchholz+=b.points;b.buchholz+=a.points;
+  a.berger+=matchPoints(m.result,0)*b.points;b.berger+=matchPoints(m.result,1)*a.points;
+ }
  const swiss=state.categories.find(c=>c.id===category)?.scheme==='swiss'||(!state.categories.find(c=>c.id===category)?.scheme&&rows.length>=7),rounds=state.categories.find(c=>c.id===category)?.rounds||0;
  if(swiss)for(const row of rows){
   // REQUIREMENTS.md §8.5: virtual opponent for an assigned bye, V = min(S,T/2).
   row.byeOpponentPoints=row.byes*Math.min(row.points,rounds/2);
   row.buchholz+=row.byeOpponentPoints;row.berger+=row.byeOpponentPoints;
  }
- return rankStandings(rows,done,swiss);
+ return rankStandings(rows,done,swiss,swiss&&usesDrawRules(state,category));
 }
-const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,scoreFormats,formatOf,capOf,matchResult,shortScore,restMinutes,restInterval,validRestInterval,queue,queueItems,matchAvailability,entryActivity,entryProgress,courtTiming,restTiming,nextForEntry,normalizeName,playerParts,playerFullName,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings,rankStandings};
+const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,scoreFormats,formatOf,matchFormat,usesDrawRules,capOf,matchResult,shortScore,restMinutes,restInterval,validRestInterval,queue,queueItems,matchAvailability,entryActivity,entryProgress,courtTiming,restTiming,nextForEntry,normalizeName,playerParts,playerFullName,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings,rankStandings};
 root.SwissCourtCore=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {runInNewContext} from 'node:vm';
 import worker from '../dist/server/index.js';
 test('release bundle serves every required asset with expected MIME types',async()=>{
- for(const [path,type] of [['/','text/html'],['/tournament.js','text/javascript'],['/sw.js','text/javascript'],['/manifest.webmanifest','application/manifest+json'],['/icon-512.png','image/png']]){
+ for(const [path,type] of [['/','text/html'],['/tournament.js','text/javascript'],['/protocol.js','text/javascript'],['/sw.js','text/javascript'],['/manifest.webmanifest','application/manifest+json'],['/icon-512.png','image/png']]){
   const response=await worker.fetch(new Request('https://swiss.example'+path));assert.equal(response.status,200);assert.ok(response.headers.get('content-type').includes(type));
  }
  assert.equal((await worker.fetch(new Request('https://swiss.example/package-lock.json'))).status,404);

@@ -642,7 +642,10 @@ button.game-result:hover { filter: brightness(1.15); box-shadow: 0 0 0 2px #6e97
 .score-team.match-winner .score-wins { background: #cceac6; color: inherit; }
 .score-team.match-loser .score-team-label { background: #fbe8e8; border-left-color: #b94150; color: #8b2d39; }
 .score-team.match-loser .score-wins { background: #f5d1d5; color: inherit; }
+.score-team.match-draw .score-team-label { background: #fff3c4; border-left-color: #bc8d12; color: #594000; }
+.score-team.match-draw .score-wins { background: #f1cb54; color: inherit; }
 .score-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.score-announcement.draw { position: static; width: auto; height: auto; clip-path: none; margin-top: 12px; color: #594000; font-weight: 700; }
 #score-error:empty { margin-top: 0; }
 .dialog-body .score-lot-note { margin-bottom: 10px; color: #71521c; }
 .score-input.game-won { border: 2px solid #3d965f; background: #e6f5df; color: #1d683e; }
@@ -746,6 +749,9 @@ button.game-result:hover { filter: brightness(1.15); box-shadow: 0 0 0 2px #6e97
 .game-result.pending { border: 1px solid #aabfa9; background: transparent; }
 .game-result.win, .board .game-result.win { background: #176c49; color: white; }
 .game-result.loss, .board .game-result.loss { background: #b02d46; color: white; }
+.game-result.draw, .board .game-result.draw { background: #f1cb54; color: #382a05; }
+.result-row.draw, .detail-match .result-draw { background: #fff3c4; }
+.result-row.draw .result-score > * { color: #594000; }
 .game-result .block-score { font-size: 12px; font-weight: 750; line-height: 1; }
 .game-result.long-score .block-score { font-size: 10px; letter-spacing: -.45px; }
 .game-result sup, .board .game-result sup { top: 0; right: 0; width: 33.333%; height: 33.333%; border-radius: 0 0 0 5px; background: #ffda55; color: #483600; font-size: 10px; }
@@ -807,8 +813,8 @@ button.game-result:hover { filter: brightness(1.15); box-shadow: 0 0 0 2px #6e97
 .board .division-code.tag-s { color: #dbcbf3; }
 .board .division-code.tag-d { color: #a4e4d4; }
 .plan-table { overflow-x: auto; }
-.plan-table-inner { min-width: 1200px; }
-.plan-grid { display: grid; grid-template-columns: 72px 64px 80px 86px minmax(158px,191px) minmax(360px,1fr) 70px 96px 96px 34px; gap: 9px; align-items: start; }
+.plan-table-inner { min-width: 1250px; }
+.plan-grid { display: grid; grid-template-columns: 72px 64px 80px 136px minmax(158px,191px) minmax(360px,1fr) 70px 96px 96px 34px; gap: 9px; align-items: start; }
 .plan-overview { margin: 0 0 12px; align-items: center; }
 .plan-summary-state { grid-column: 1 / 7; }
 .plan-table-head { margin: 6px 0 7px; color: #485949; font-size: 13px; font-weight: 700; align-items: end; }
@@ -863,6 +869,7 @@ button.game-result:hover { filter: brightness(1.15); box-shadow: 0 0 0 2px #6e97
 .group-size { margin-inline-start: 51px; color: #526651; font-size: 11px; }
 .plan-toolbar, .plan-toolbar-management, .plan-toolbar-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .plan-toolbar { gap: 16px; }
+.plan-toolbar-edit > .muted { font-size: 12px; }
 .plan-toolbar-management:has(+ .plan-toolbar-edit) { padding-right: 16px; border-right: 1px solid #c8d5c6; }
 .plan-menu { position: relative; z-index: 4; }
 .plan-menu summary { list-style: none; cursor: pointer; }
@@ -871,6 +878,18 @@ button.game-result:hover { filter: brightness(1.15); box-shadow: 0 0 0 2px #6e97
 .plan-menu-panel .btn { justify-content: flex-start; white-space: nowrap; }
 .plan-card .plan-metric-error { width: 100%; margin: 0; font-size: 12px; color: #944236; }
 .plan-metric-error:empty { display: none; }
+
+.court-dock-size { min-height: 34px; padding: 3px 5px; border: 1px solid #cad4c8; border-radius: 6px; color: var(--ink); background: white; font-size: 12px; }
+.courts-dock-full > .court-dock-size { display: block; margin: 0 0 6px auto; }
+.courts-dock-minimal, .courts-dock-compact { display: flex; align-items: flex-start; gap: 8px; padding-block: 5px; }
+.courts-strip { display: flex; flex: 1; gap: 6px; min-width: 0; overflow-x: auto; padding: 2px; }
+.courts-strip .court { flex: none; padding: 3px 8px; font-size: 12px; line-height: 1.4; }
+.court-strip-heading { display: flex; align-items: center; justify-content: space-between; gap: 7px; white-space: nowrap; }
+.court-strip-heading > strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+.courts-dock-minimal .court { justify-content: center; min-height: 30px; }
+.courts-dock-compact .court { flex-basis: clamp(142px, 13vw, 210px); min-height: 63px; }
+.court-strip-team { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.court-strip-heading .division-code { margin-right: auto; font-size: 12px; }
 
 /* Composition, seeds, and editable starting positions. */
 .roster-workspace { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(245px,1fr); gap: 14px; align-items: start; }

@@ -67,11 +67,20 @@ function planPresetOptions(category){
  if(category.planned===12)return [['triple','Три сетки с бронзой']];
  return [];
 }
+const validCourtCount=value=>Number.isInteger(value)&&value>=1&&value<=32;
+const courtCountOptions=Object.fromEntries(Array.from({length:32},(_,i)=>[i+1,i+1]));
 function planSettingError(settings){
- if(!Number.isInteger(settings.courts)||settings.courts<1||settings.courts>32||!Number.isSafeInteger(settings.rentalMinutes)||settings.rentalMinutes<=0){
+ if(!validCourtCount(settings.courts)||!Number.isSafeInteger(settings.rentalMinutes)||settings.rentalMinutes<=0){
   return 'Укажите число кортов и длительность аренды, например 2:30.';
  }
- return C.validRestInterval(settings.restMinutes)?'':'Укажите отдых целым числом минут от нуля.';
+ if(!C.validRestInterval(settings.restMinutes))return 'Укажите отдых целым числом минут от нуля.';
+ if(!settings.title.trim()||!settings.venue.trim())return 'Заполните название турнира и зал.';
+ if(!validPlanDate(settings.date))return 'Укажите дату турнира.';
+ return '';
+}
+function validPlanDate(date){
+ const time=Date.parse(date+'T12:00:00Z');
+ return /^\d{4}-\d{2}-\d{2}$/.test(date)&&Number.isFinite(time)&&new Date(time).toISOString().slice(0,10)===date;
 }
 function summaryCells(estimate){
  const error=planSettingError(planDraft.settings);
@@ -112,7 +121,12 @@ function planSelect(index,field,values,value,{disabled=false,leading='',compact=
   '" data-plan="'+field+'" data-index="'+index+'" '+(disabled?'disabled':'')+'>'+planOptions(values,value)+'</select>'+
   (leading?icon(leading,'plan-select-icon'):'')+(compact?'<span class="plan-short-value" aria-hidden="true">'+esc(compact)+'</span>':'')+'</span>';
 }
-function schemeSettings(category,index,scheme,locked){
+function schemeSettings(category,index,scheme,locked,readonly=locked){
+ if(scheme==='swiss'&&!readonly){
+  const n=state.started?state.entries.filter(e=>e.category===category.id).length:category.planned;
+  const min=state.started?T.startedSwissRounds(state,category.id):3;
+  return planRadio(index,'rounds',[3,4,5,6,7],category.rounds,'Число туров',round=>round<min||round>B.circleRounds(n))+'<small>туров</small>';
+ }
  if(locked){
   if(scheme==='circle')return (category.circles||1)+' круг.';
   if(scheme==='swiss')return category.rounds+' туров';
@@ -120,25 +134,26 @@ function schemeSettings(category,index,scheme,locked){
   return category.groupCount+' групп · '+category.playoffs.length+' сеток';
  }
  if(scheme==='circle')return planRadio(index,'circles',[1,2],category.circles,'Число кругов')+'<small>круга</small>';
- if(scheme==='swiss')return planRadio(index,'rounds',[3,4,5,6,7],category.rounds,'Число туров',round=>round>B.circleRounds(category.planned))+'<small>туров</small>';
  if(scheme==='knockout')return planSelect(index,'bracketMode',B.modes,category.bracketMode);
  return groupFields(category,index);
 }
 function planRow(category,index,metric){
- const n=state.entries.filter(e=>e.category===category.id).length,locked=state.started||!editorReady;
+ const n=state.entries.filter(e=>e.category===category.id).length,readonly=state.closed||!editorReady||!!storageError,locked=state.started||readonly;
  const scheme=category.scheme||T.schemeOf(state,category.id);
- const select=(field,values,value,options={})=>planSelect(index,field,values,value,{...options,disabled:options.disabled||locked});
+ const select=(field,values,value,options={})=>planSelect(index,field,values,value,{...options,disabled:options.disabled||(field==='scoreFormat'?readonly:locked)});
  const input=(field,type,value,attrs='')=>'<input class="form-control" type="'+type+'" aria-label="'+({name:'Название категории',planned:'Участники по плану'}[field])+'" data-plan="'+field+'" data-index="'+index+
   '" value="'+esc(value)+'" '+attrs+' '+(locked?'disabled':'')+'>';
  const names=Object.fromEntries(T.divisions.map(c=>[c.id,c.code+' · '+c.name]));
+ const formats=Object.fromEntries(Object.entries(C.scoreFormats).filter(([,format])=>scheme==='swiss'||!format.allowsDraw)
+  .map(([key,format])=>[key,format.label]));
  const label=category.doubles?'Пар':'Участников',schemeIcon={circle:'refresh',swiss:'table',knockout:'grid',groups:'people'};
  return '<div class="plan-grid plan-category-row"><div class="plan-name">'+input('name','text',category.name,'maxlength="5" placeholder="'+esc(category.code)+'"')+'</div>'+
   '<div>'+select('division',names,category.division||category.id,{disabled:n>0,compact:category.code})+'</div>'+
   '<div class="plan-number">'+input('planned','number',locked?n:category.planned,'min="2" max="32"')+(n&&!locked&&n!==category.planned?
    '<button class="btn small" data-action="actual-count" data-index="'+index+'" title="Взять фактический состав">'+n+' '+label.toLowerCase()+'</button>':'')+'</div>'+
-  '<div>'+select('scoreFormat',Object.fromEntries(Object.entries(C.scoreFormats).map(([key,format])=>[key,format.label])),category.scoreFormat||'classic')+'</div>'+
+  '<div>'+select('scoreFormat',formats,category.scoreFormat||'classic')+'</div>'+
   '<div>'+select('scheme',B.schemes,scheme,{leading:schemeIcon[scheme]})+'</div>'+
-  '<div class="plan-scheme-options"><div class="plan-option-controls" id="plan-options-'+index+'">'+schemeSettings(category,index,scheme,locked)+'</div><p class="plan-metric-error" id="plan-error-'+index+'">'+esc(metric.error)+'</p></div>'+
+  '<div class="plan-scheme-options"><div class="plan-option-controls" id="plan-options-'+index+'">'+schemeSettings(category,index,scheme,locked,readonly)+'</div><p class="plan-metric-error" id="plan-error-'+index+'">'+esc(metric.error)+'</p></div>'+
   '<div class="plan-category-stats" id="plan-metric-'+index+'">'+categoryCells(metric)+'</div>'+
   '<div class="plan-remove">'+(!locked?'<button class="icon-btn" data-action="remove-plan-category" data-index="'+index+'" aria-label="Удалить категорию '+esc(categoryLabel(category))+'" '+(n||planDraft.categories.length===1?'disabled':'')+'>'+icon('trash')+'</button>':'')+'</div></div>';
 }
@@ -151,17 +166,20 @@ function plannerActions(readonly){
  return '<div class="plan-toolbar"><div class="plan-toolbar-management">'+
   (editorReady?'<button class="btn" data-action="new-day">Новый турнир</button>':'')+menu+'</div>'+
   (!readonly?'<div class="plan-toolbar-edit">'+(!state.started?'<button class="btn" data-action="add-plan-category" '+(planDraft.categories.length>=5?'disabled':'')+'>Добавить категорию</button>':'')+
-   '<button class="btn primary" data-action="save-plan">Сохранить</button></div>':'')+'</div>';
+   '<span class="muted">Автосохранение</span></div>':'')+'</div>';
 }
 function planner(){
  ensurePlanDraft();
- const draft=planDraft,estimate=peekPlan(),readonly=state.closed||!editorReady;
- const setting=(label,key,type,attributes='')=>planField(label,'<input class="form-control" type="'+type+'" data-plan-setting="'+key+'" value="'+esc(draft.settings[key])+'" '+attributes+' '+(readonly||state.started&&key==='courts'?'disabled':'')+'>');
+ const draft=planDraft,estimate=peekPlan(),readonly=state.closed||!editorReady||!!storageError;
+ const setting=(label,key,type,attributes='')=>planField(label,'<input class="form-control" type="'+type+'" data-plan-setting="'+key+'" value="'+esc(draft.settings[key])+'" '+attributes+' '+(readonly?'disabled':'')+'>');
+ const courts=state.started&&!readonly?planField('Кортов','<select id="plan-courts" class="form-control" data-plan-setting="courts" aria-describedby="plan-courts-help">'+
+  planOptions(courtCountOptions,state.settings.courts)+'</select><small id="plan-courts-help">Игры с убранных кортов вернутся в очередь.</small>'):
+  setting('Кортов','courts','number','id="plan-courts" min="1" max="32"');
  return heading('Турнир','',plannerActions(readonly))+
   '<section class="panel plan-card"><h2>Общие параметры</h2><div class="plan-config">'+setting('Название турнира','title','text','maxlength="100"')+
   setting('Дата','date','date')+setting('Зал','venue','text','maxlength="100"')+
   planField('Длительность аренды (ч:мм)',rentalInput(draft.settings.rentalMinutes,'id="plan-rental-minutes" data-plan-setting="rentalMinutes" '+(readonly?'disabled':'')))+
-  setting('Кортов','courts','number','min="1" max="32"')+
+  courts+
   setting('Отдых между играми (мин)','restMinutes','number','id="plan-rest-minutes" min="0" step="1" required')+'</div></section>'+
   '<section class="panel plan-card plan-table"><div class="plan-table-inner"><div class="plan-grid plan-overview" id="plan-overview">'+summaryCells(estimate)+'</div>'+
   '<div class="plan-grid plan-table-head">'+['Название','Разряд','Участников','Счёт','Схема','Настройки схемы'].map(label=>'<span>'+label+'</span>').join('')+'</div>'+
@@ -180,28 +198,82 @@ function updatePlanMetrics(){
   $('#plan-error-'+i).textContent=metric.error;
  });
 }
+function persistPlan(next){
+ if(!persist(next))return false;
+ planDraft.revision=state.revision;
+ return true;
+}
+function saveLiveCourts(count){
+ const next=structuredClone(state);
+ const returned=next.matches.filter(match=>match.status==='playing'&&match.court>count);
+ for(const match of returned)C.returnToQueue(next,match.id);
+ next.settings.courts=count;
+ if(!persistPlan(next))return false;
+ $('.courts-dock').outerHTML=courtsDock();
+ if(returned.length)toast('Возвращено в очередь встреч: '+returned.length);
+ return true;
+}
+function savePlanSetting(field,value){
+ if(field==='rentalMinutes'&&(!Number.isSafeInteger(value)||value<=0)||
+  field==='courts'&&!validCourtCount(value)||
+  field==='restMinutes'&&!C.validRestInterval(value)||field==='date'&&!validPlanDate(value))return;
+ if(field==='title'||field==='venue'){
+  value=value.trim();
+  if(!value)return;
+ }
+ if(value===state.settings[field])return;
+ const settings={...state.settings,[field]:value};
+ if(field==='restMinutes'&&value!==C.restInterval(state.settings))settings.restMinutesCustom=true;
+ if(field==='rentalMinutes'){delete settings.start;delete settings.end;}
+ if(persistPlan({...state,settings})&&['date','title','venue'].includes(field))$('.day-context').innerHTML=dayContext();
+}
+function savePlanCategory(index){
+ const draft=planDraft.categories[index],category={...draft,name:draft.name.trim()};
+ if(Array.from(category.name).length>5)return;
+ try{B.validPlan(category,category.planned);}catch{return;}
+ if(JSON.stringify(category)===JSON.stringify(state.categories[index]))return;
+ const categories=state.categories.map(current=>current.id===category.id?category:current);
+ persistPlan({...state,categories});
+}
 function updatePlanField(target,commit){
- if(mode!=='real'||state.closed||view!=='tournament'||!planDraft)return;
+ if(mode!=='real'||state.closed||view!=='tournament'||!planDraft||!editorReady||storageError)return;
  const {planSetting,plan:field,index}=target.dataset||{};
+ if(planSetting==='courts'&&state.started){
+  if(!commit)return;
+  const count=Number(target.value);
+  if(validCourtCount(count)&&count!==state.settings.courts&&saveLiveCourts(count)){
+   planDraft.settings.courts=count;
+   updatePlanMetrics();
+  }else target.value=String(state.settings.courts);
+  return;
+ }
  if(planSetting){
-  if(state.started&&planSetting==='courts')return;
   let value=target.value;
   if(planSetting==='rentalMinutes')value=T.parseRentalDuration(value);
   if(planSetting==='courts'||planSetting==='restMinutes')value=value.trim()===''?NaN:Number(value);
   planDraft.settings[planSetting]=value;
+  savePlanSetting(planSetting,value);
   updatePlanMetrics();
   return;
  }
- if(!field||state.started)return;
+ if(!field)return;
  const category=planDraft.categories[Number(index)];
  if(!category)return;
- if(field==='name'){category.name=target.value;return;}
+ if(state.started){
+  if(commit&&['scoreFormat','rounds'].includes(field)){
+   const value=field==='rounds'?Number(target.value):target.value;
+   if(!mutate(s=>T.updateLiveCategory(s,category.id,field,value)))render();
+  }
+  return;
+ }
+ if(field==='name'){category.name=target.value;savePlanCategory(index);return;}
  if(field==='planned'){
   category.planned=Number(target.value);
   if(commit&&category.scheme==='groups')normalizeGroupPlan(category);
   if(commit&&['swiss','groups'].includes(category.scheme)){
    $('#plan-options-'+index).innerHTML=schemeSettings(category,Number(index),category.scheme,false);
   }
+  savePlanCategory(index);
   updatePlanMetrics();
   return;
  }else if(!commit)return;
@@ -222,8 +294,12 @@ function updatePlanField(target,commit){
  else if(field.startsWith('route-'))category.routes[Number(field.split('-')[1])]=Number(target.value);
  else {
   category[field]=['rounds','circles'].includes(field)?Number(target.value):target.value;
-  if(field==='scheme'&&target.value==='groups')normalizeGroupPlan(category);
+  if(field==='scheme'){
+   if(category.scheme!=='swiss'&&C.scoreFormats[category.scoreFormat].allowsDraw)category.scoreFormat='two15';
+   if(category.scheme==='groups')normalizeGroupPlan(category);
+  }
  }
+ savePlanCategory(index);
  render();
 }
 function applyPlanPreset(category,id){
@@ -236,38 +312,30 @@ document.addEventListener('input',event=>updatePlanField(event.target,false));
 document.addEventListener('change',event=>updatePlanField(event.target,true));
 document.addEventListener('click',event=>{
  const target=event.target.closest('[data-action]');
- if(!target||boardMode||mode!=='real'||state.closed||view!=='tournament'||!planDraft||!editorReady)return;
+ if(!target||boardMode||mode!=='real'||state.started||state.closed||view!=='tournament'||!planDraft||!editorReady||storageError)return;
  const {action,index}=target.dataset;
- if(action==='save-plan'){
-  const error=planSettingError(planDraft.settings);
-  if(error){toast(error);return;}
-  try{
-   const next=structuredClone(planDraft);
-   if(!state.started)for(const category of next.categories){
-    category.name=category.name.trim();
-    if(Array.from(category.name).length>5)throw Error('Название категории должно содержать не более 5 символов.');
-    B.validPlan(category,category.planned);
-   }
-   mutate(s=>{s.settings=next.settings;if(!s.started)s.categories=next.categories;},'Турнир сохранён');
-  }catch(error){toast(error.message);}
-  return;
- }
- if(state.started)return;
  switch(action){
  case 'add-plan-category':{
   if(planDraft.categories.length>=5)return;
   const base=T.divisions.find(c=>!planDraft.categories.some(plan=>(plan.division||plan.id)===c.id))||T.divisions[0];
-  planDraft.categories.push(defaultPlan({...base,id:'cat-'+crypto.randomUUID(),division:base.id,name:base.code},8));
+  const category=defaultPlan({...base,id:'cat-'+crypto.randomUUID(),division:base.id,name:base.code},8);
+  if(persistPlan({...state,categories:[...state.categories,category]}))planDraft.categories.push(category);
   render();break;
  }
  case 'remove-plan-category':
-  if(planDraft.categories.length>1&&!state.entries.some(e=>e.category===planDraft.categories[index]?.id)){planDraft.categories.splice(Number(index),1);render();}
+  if(planDraft.categories.length>1){
+   const id=planDraft.categories[index]?.id;
+   if(id&&!state.entries.some(e=>e.category===id)&&persistPlan({...state,categories:state.categories.filter(c=>c.id!==id)})){
+    planDraft.categories.splice(Number(index),1);render();
+   }
+  }
   break;
  case 'actual-count':{
   const category=planDraft.categories[index],count=state.entries.filter(e=>e.category===category.id).length;
   if(count<2){toast('В составе пока меньше двух участников.');break;}
   category.planned=count;
   if(category.scheme==='groups')normalizeGroupPlan(category);
+  savePlanCategory(index);
   render();break;
  }
  }

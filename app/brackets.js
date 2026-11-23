@@ -21,6 +21,7 @@ function groupPlayoffs(category,n){
 function validPlan(category,n){
  const {scheme,rounds,groupCount,playoffs,bracketMode,scoreFormat,seeding}=category;
  if(!Object.hasOwn(schemes,scheme)||!Object.hasOwn(C.scoreFormats,scoreFormat)||seeding!==undefined&&!['rating','random','manual'].includes(seeding))throw Error('Проверьте схему и формат счёта.');
+ if(C.scoreFormats[scoreFormat].allowsDraw&&scheme!=='swiss')throw Error('Формат с ничьей доступен в швейцарской схеме.');
  if(!Number.isInteger(n)||n<2||n>32)throw Error('Нужно от 2 до 32 участников.');
  if(scheme==='circle'&&category.circles!==undefined&&![1,2].includes(category.circles))throw Error('Выберите один или два круга.');
  if(scheme==='swiss'&&![3,4,5,6,7].includes(rounds))throw Error('Выберите от 3 до 7 туров.');

@@ -467,6 +467,21 @@ test('a free court offers all four known group games even with an earlier game p
  assert.match(courtDialog().text,/Нет доступных встреч/);
  assert.doesNotMatch(courtDialog().text,/Ожидает|ФАМИЛИЯ/);
 });
+test('after two of seven round-robin rounds the court offers all twenty remaining matches',()=>{
+ const state=field(8,'circle');state.settings.courts=4;T.start(state);
+ for(const match of state.matches.filter(match=>match.round<=2))play(state,match);
+ const {parse}=require('node-html-parser'),ui=boot({realState:state,hash:'#dashboard'});
+ ui.click({action:'choose-match',court:'2'});
+ const games=parse(ui.node('#dialog').innerHTML).querySelectorAll('[data-action="assign-to-court"]');
+ assert.equal(games.length,20);
+ assert.equal(games[0].getAttribute('data-id'),state.matches.find(match=>match.round===3).id);
+ const later=state.matches.find(match=>match.round===7);
+ assert.ok(games.some(button=>button.getAttribute('data-id')===later.id));
+ ui.click({action:'assign-to-court',id:later.id,court:'2'});
+ const saved=D.decode(ui.storage.get(D.key));
+ assert.equal(saved.matches.find(match=>match.id===later.id).court,2);
+ assert.equal(saved.matches.filter(match=>match.status==='done').length,8);
+});
 test('a seven-player bracket keeps the bye in place and connects the final and bronze to their semifinals',()=>{
  const state=field(7,'knockout',{bracketMode:'bronze'});T.start(state);
  const {parse}=require('node-html-parser'),ui=boot({realState:state,hash:'#standings'});
@@ -518,4 +533,27 @@ test('passive scoreboard has seven court cards, a chess table and the complete s
  assert.equal(board.querySelectorAll('.chess-table .game-result.playing').length,2);
  assert.deepEqual(board.querySelectorAll('.chess-table .game-result.deciding .block-score').map(el=>el.text).sort(),['18;−19;−22','−18;19;22'].sort());
  assert.equal(board.querySelectorAll('button, [data-action]').length,0);
+});
+test('round-robin scoreboard sorts the chess matrix by standings and shows shared places on the left',()=>{
+ const state=field(4,'circle');
+ for(const participant of state.entries)for(const player of participant.players)player.rating=1000;
+ T.start(state);
+ const winner=state.drawOrders.md.at(-1);
+ const match=state.matches.find(match=>[match.a,match.b].includes(winner));
+ play(state,match,match.a===winner?win:lose);
+ const standings=T.standings(state,'md'),opponent=match.a===winner?match.b:match.a;
+ assert.equal(standings[0].entry.id,winner);
+ const {parse}=require('node-html-parser'),board=parse(boot({realState:state,hash:'#board'}).html());
+ const table=board.querySelector('.chess-ranked'),rows=table.querySelectorAll('tbody tr');
+ assert.equal(table.querySelector('thead .chess-number').text,'Место');
+ assert.deepEqual(rows.map(row=>row.querySelector('.chess-number').text),['1','2=','2=','4']);
+ const opponents=table.querySelectorAll('thead th').slice(2,-1);
+ for(const [index,row] of rows.entries()){
+  const id=standings[index].entry.id;
+  assert.equal(opponents[index].getAttribute('aria-label'),(index+1)+' · '+C.entryLabel(state,id));
+  assert.deepEqual(row.querySelectorAll('.team-names span').map(name=>name.text),standings[index].entry.players.map(player=>C.playerLabel(state,player)));
+  assert.ok(row.children[index+2].classList.contains('chess-self'));
+ }
+ const column=standings.findIndex(row=>row.entry.id===opponent)+2;
+ assert.equal(rows[0].children[column].querySelector('.block-score').text,'15;17');
 });

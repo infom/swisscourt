@@ -1,6 +1,6 @@
 /* SwissCourt: organizer and public display. */
 'use strict';
-const appVersion='1.5.1';
+const appVersion='1.5.2';
 const C=SwissCourtCore;
 const T=SwissCourtTournament,D=SwissCourtStorage;
 const S=typeof SwissCourtSimulation==="undefined"?null:SwissCourtSimulation;

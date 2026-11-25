@@ -945,11 +945,12 @@ button.game-result:hover { filter: brightness(1.15); box-shadow: 0 0 0 2px #6e97
 .board .board-courts { grid-template-columns: repeat(min(var(--total-courts,7),4),minmax(0,1fr)); }
 @media (min-width: 1220px) { .board .board-courts { grid-template-columns: repeat(min(var(--total-courts,7),7),minmax(0,1fr)); gap: 8px; } }
 @media (max-width: 720px) { .board .board-courts { grid-template-columns: repeat(2,minmax(0,1fr)); } }
-.board .chess-table { width: 100%; min-width: max-content; border-collapse: separate; border-spacing: 0; }
+.board .chess-table { --chess-number-width: 32px; width: 100%; min-width: max-content; border-collapse: separate; border-spacing: 0; }
+.board .chess-ranked { --chess-number-width: 54px; }
 .board .chess-table th, .board .chess-table td { height: 48px; text-align: center; padding: 3px 4px; white-space: nowrap; border-bottom: 1px solid #486250; }
 .board .chess-table thead th { height: 32px; background: #2a4938; border-color: #607967; }
-.board .chess-table .chess-number { position: sticky; left: 0; width: 32px; min-width: 32px; }
-.board .chess-table .chess-player { position: sticky; left: 32px; width: 154px; min-width: 118px; padding-inline: 5px 9px; text-align: left; border-right: 1px solid #486250; }
+.board .chess-table .chess-number { position: sticky; left: 0; width: var(--chess-number-width); min-width: var(--chess-number-width); }
+.board .chess-table .chess-player { position: sticky; left: var(--chess-number-width); width: 154px; min-width: 118px; padding-inline: 5px 9px; text-align: left; border-right: 1px solid #486250; }
 .board .chess-table thead .chess-player, .board .chess-table thead .chess-number { z-index: 3; }
 .board .chess-table tbody > tr > .chess-player, .board .chess-table tbody .chess-number { position: sticky; top: auto; z-index: 2; color: #f1f8e9; background: #1b372b; }
 .board .chess-table .team-names { font-size: 16px; display: inline-flex; vertical-align: middle; }

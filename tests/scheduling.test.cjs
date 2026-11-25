@@ -12,16 +12,17 @@ function finish(state,m,scores=win){if(m.status==='queued')C.assign(state,m.id,1
 function nearlyDone(n=8){const s=day(n);for(const m of s.matches.slice(0,-1))finish(s,m);return s;}
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 
-test('round robin can call a known later encounter while unrelated earlier games continue',()=>{
- const s=day(6),candidate=s.matches.find(m=>m.round===2);
- const own=s.matches.filter(m=>m.round===1&&[m.a,m.b].some(id=>[candidate.a,candidate.b].includes(id)));
- assert.equal(C.matchAvailability(s,candidate).available,false);
- for(const m of own)finish(s,m);
- const last=s.matches.find(m=>m.round===1&&m.status==='queued');assert.ok(last);C.assign(s,last.id,1);
+test('a legacy round robin allows later rounds for free pairs and rejects a busy pair',()=>{
+ const s=day(6),candidate=s.matches.find(m=>m.round===3);
+ const earlier=s.matches.find(m=>m.round===1&&[m.a,m.b].includes(candidate.a));
  assert.equal(C.matchAvailability(s,candidate).available,true);
- assert.ok(C.restMinutes(s,candidate)<15,'short rest remains a warning, not a prohibition');
- C.assign(s,candidate.id,2);T.validate(s);
- assert.equal(s.matches.filter(m=>m.status==='playing').length,2);
+ C.assign(s,earlier.id,1);
+ assert.deepEqual(C.matchAvailability(s,candidate).blockers.map(blocker=>blocker.type),['busy']);
+ assert.throws(()=>C.assign(s,candidate.id,2),/занят/);
+ finish(s,earlier);
+ assert.ok(C.restMinutes(s,candidate)<15,'short rest remains a warning');
+ C.assign(s,candidate.id,2);
+ assert.equal(D.decode(JSON.stringify(s)).matches.find(m=>m.id===candidate.id).court,2);
 });
 test('Swiss early pairs are identical under every remaining winner and contain only ready players',()=>{
  for(const n of [7,8,9,10])for(const mask of [0,1,3]){

@@ -93,6 +93,9 @@ function ensureRoundRobinSchedule(state){
   }
  }
 }
+function schemeOf(state,category){
+ return state.categories.find(c=>c.id===category)?.scheme||(state.entries.filter(e=>e.category===category).length<7?'circle':'swiss');
+}
 function matchAvailability(state,match){
  if(match.status!=='queued')return {available:false,blockers:[]};
  const blockers=[],real=state.kind==='tournament';
@@ -102,7 +105,8 @@ function matchAvailability(state,match){
   const players=sharedPlayers(state,[match.a,match.b],[active.a,active.b]);
   if(players.length)blockers.push({type:'busy',court:active.court,matchId:active.id,players});
  }
- const earlier=match.group===undefined?state.matches.filter(m=>m.category===match.category&&m.round<match.round&&m.status!=='done'&&(!real||same(m))):[];
+ const ordered=match.group===undefined&&(!real||schemeOf(state,match.category)!=='circle');
+ const earlier=ordered?state.matches.filter(m=>m.category===match.category&&m.round<match.round&&m.status!=='done'&&(!real||same(m))):[];
  if(earlier.length){const round=Math.min(...earlier.map(m=>m.round));blockers.push({type:'round',round,remaining:earlier.filter(m=>m.round===round).length});}
  return {available:match.status==='queued'&&blockers.length===0,blockers};
 }
@@ -288,7 +292,7 @@ function standings(state,category){
   a.buchholz+=b.points;b.buchholz+=a.points;
   a.berger+=matchPoints(m.result,0)*b.points;b.berger+=matchPoints(m.result,1)*a.points;
  }
- const swiss=state.categories.find(c=>c.id===category)?.scheme==='swiss'||(!state.categories.find(c=>c.id===category)?.scheme&&rows.length>=7),rounds=state.categories.find(c=>c.id===category)?.rounds||0;
+ const swiss=schemeOf(state,category)==='swiss',rounds=state.categories.find(c=>c.id===category)?.rounds||0;
  if(swiss)for(const row of rows){
   // REQUIREMENTS.md §8.5: virtual opponent for an assigned bye, V = min(S,T/2).
   row.byeOpponentPoints=row.byes*Math.min(row.points,rounds/2);
@@ -296,6 +300,6 @@ function standings(state,category){
  }
  return rankStandings(rows,done,swiss,swiss&&usesDrawRules(state,category));
 }
-const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,scoreFormats,formatOf,matchFormat,usesDrawRules,capOf,matchResult,matchPoints,shortScore,restMinutes,restInterval,validRestInterval,queue,queueItems,matchAvailability,entryActivity,entryProgress,courtTiming,restTiming,nextForEntry,normalizeName,playerParts,playerFullName,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings,rankStandings};
+const api={categories,seed,rating,firstPairs,roundRobin,validGame,validateScores,scoreFormats,formatOf,matchFormat,usesDrawRules,capOf,matchResult,matchPoints,shortScore,restMinutes,restInterval,validRestInterval,queue,queueItems,schemeOf,matchAvailability,entryActivity,entryProgress,courtTiming,restTiming,nextForEntry,normalizeName,playerParts,playerFullName,playerLabel,entryLabel,ensureRoundRobinSchedule,assign,finish,returnToQueue,standings,rankStandings};
 root.SwissCourtCore=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

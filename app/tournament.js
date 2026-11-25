@@ -1,6 +1,7 @@
 (function(root){
 'use strict';
 const C=root.SwissCourtCore||(typeof require==='function'?require('./core.js'):null);
+const {schemeOf}=C;
 const B=root.SwissCourtBrackets||(typeof require==='function'?require('./brackets.js'):null);
 const blossom=root.SwissCourtBlossom||(typeof require==='function'?require('edmonds-blossom-fixed'):null);
 const divisions=[
@@ -112,13 +113,14 @@ function validate(state,{ready=false}={}){
  if(state.started)for(const cat of state.categories){
   const n=state.entries.filter(e=>e.category===cat.id).length,matches=state.matches.filter(m=>m.category===cat.id),partial=partials.find(p=>p.category===cat.id),rounds=Math.max(partial?.round||0,...matches.map(m=>m.round));
   if(isBracket(state,cat.id)){validateBracket(state,cat,matches);continue;}
+  const swiss=schemeOf(state,cat.id)==='swiss';
   if(rounds<1||rounds>roundCount(state,cat.id))fail('Неверное число опубликованных туров.');
   if(partial&&partial.round!==rounds)fail('Только последний тур может быть сформирован частично.');
   for(let r=1;r<=rounds;r++){
    const current=matches.filter(m=>m.round===r),isPartial=partial?.round===r;
    if(isPartial?(current.length>Math.floor(n/2)||current.some(m=>m.early!==true)):current.length!==Math.floor(n/2))fail('В туре отсутствуют встречи.');
-   if(state.byes.filter(b=>b.category===cat.id&&b.round===r).length!==(schemeOf(state,cat.id)==='swiss'&&!isPartial?n%2:0))fail('Неверные пропуски тура.');
-   for(const m of current.filter(m=>m.status!=='queued'))if(matches.some(previous=>previous.round<r&&previous.status!=='done'&&[previous.a,previous.b].some(eid=>[m.a,m.b].includes(eid))))fail('Пара ещё не завершила свою предыдущую встречу.');
+   if(state.byes.filter(b=>b.category===cat.id&&b.round===r).length!==(swiss&&!isPartial?n%2:0))fail('Неверные пропуски тура.');
+   if(swiss)for(const m of current.filter(m=>m.status!=='queued'))if(matches.some(previous=>previous.round<r&&previous.status!=='done'&&[previous.a,previous.b].some(eid=>[m.a,m.b].includes(eid))))fail('Пара ещё не завершила свою предыдущую встречу.');
   }
  }
  if(state.closed&&(!state.started||!state.categories.every(c=>roundStatus(state,c.id).complete)))fail('День ещё не завершён.');
@@ -126,9 +128,6 @@ function validate(state,{ready=false}={}){
 }
 function seeded(state,category){
  return state.entries.filter(e=>e.category===category).slice().sort((a,b)=>C.rating(b)-C.rating(a)||C.entryLabel(state,a.id).localeCompare(C.entryLabel(state,b.id),'ru')||a.id.localeCompare(b.id));
-}
-function schemeOf(state,category){
- return state.categories.find(c=>c.id===category)?.scheme||(state.entries.filter(e=>e.category===category).length<7?'circle':'swiss');
 }
 function isBracket(state,category){return ['knockout','groups'].includes(schemeOf(state,category));}
 function roundCount(state,category){

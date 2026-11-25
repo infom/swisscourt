@@ -98,6 +98,7 @@ function bracketLabel(bracket){
  return 'За '+bracket.first+'–'+bracket.last+'-е места';
 }
 function chessTable(category,rows,order,label,group){
+ const ranked=group===undefined;
  const rankings=new Map(rows.map(row=>[row.entry.id,row]));
  const progresses=new Map(order.map(id=>[id,new Map(C.entryProgress(state,id).map(game=>[game.matchId,game]))]));
  const matches=new Map();
@@ -106,17 +107,18 @@ function chessTable(category,rows,order,label,group){
   if(!matches.has(pair))matches.set(pair,[]);
   matches.get(pair).push(match);
  }
- const header='<tr><th scope="col" class="chess-number">№</th><th scope="col" class="chess-player">'+esc(label)+'</th>'+
+ const header='<tr><th scope="col" class="chess-number">'+(ranked?'Место':'№')+'</th><th scope="col" class="chess-player">'+esc(label)+'</th>'+
   order.map((id,index)=>'<th scope="col" aria-label="'+esc((index+1)+' · '+surnames(id))+'">'+(index+1)+'</th>').join('')+'<th scope="col">Очки</th></tr>';
- return '<table class="chess-table" aria-label="'+esc('Шахматка · '+label)+'"><thead>'+header+'</thead><tbody>'+order.map((id,index)=>{
+ return '<table class="chess-table'+(ranked?' chess-ranked':'')+'" aria-label="'+esc('Шахматка · '+label)+'"><thead>'+header+'</thead><tbody>'+order.map((id,index)=>{
   const row=rankings.get(id),leader=row?.place===1&&row.points>0;
+  const position=ranked?(row.place+(row.tied?'=':'')):index+1;
   const cells=order.map(opponent=>{
    if(opponent===id)return '<td class="chess-self" aria-label="Своя пара">–</td>';
    const games=matches.get([id,opponent].sort().join('/'))||[];
    return '<td><div class="chess-games">'+games.map(match=>resultBlock(match.status==='done'?(progresses.get(id).get(match.id)||{pending:true}):
     match.status==='playing'?{playing:true,court:match.court}:{pending:true},id)).join('')+'</div></td>';
   }).join('');
-  return '<tr><td class="chess-number">'+(index+1)+'</td><th scope="row" class="chess-player">'+
+  return '<tr><td class="chess-number">'+position+'</td><th scope="row" class="chess-player">'+
    (leader?'<span class="chess-leader" aria-label="Первое место">'+icon('crown')+'</span>':'')+'<span class="team-names">'+pairNames(id)+'</span></th>'+cells+
    '<td class="points-col"><strong>'+coefficient(row?.points)+'</strong></td></tr>';
  }).join('')+'</tbody></table>';
@@ -225,7 +227,10 @@ function stageSummary(id){
 }
 function divisionContent(id,isBoard){
  if(isBoard&&!state.started)return '<div class="board-preparing">Составы готовятся</div>';
- if(isBoard&&T.schemeOf(state,id)==='circle'&&!state.closed)return chessTable(id,T.standings(state,id),T.drawOrder(state,id),'Круговая');
+ if(isBoard&&T.schemeOf(state,id)==='circle'&&!state.closed){
+  const rows=T.standings(state,id);
+  return chessTable(id,rows,rows.map(row=>row.entry.id),'Круговая');
+ }
  if(!state.started||!T.isBracket(state,id))return standingsTable(id,isBoard);
  const scheme=T.schemeOf(state,id),status=T.roundStatus(state,id);
  if(status.complete)return standingsTable(id,isBoard);

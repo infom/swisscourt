@@ -135,8 +135,15 @@ test('scoreboard is read-only and gets the real day with coefficients',()=>{
  const s=day();T.start(s);const ui=boot({realState:s,hash:'#board'});assert.match(ui.html(),/>Соперники<\/th>/);assert.match(ui.html(),/ТУРНИР ИДЁТ/);
  assert.equal(ui.run('mutate(s=>s.settings.title="bad")'),false);assert.equal(ui.run('state.settings.title'),s.settings.title);
 });
-test('organizer prepares, clears and swaps seats before launching the saved draw and closing the tournament',()=>{
- const ui=boot({realState:day(2),hash:'#tournament'});
+test('organizer finishes a tournament and uploads immutable results with a restorable backup',async()=>{
+ const uploads=[],key='a'.repeat(43);
+ const ui=boot({realState:day(2),hash:'#tournament',fetcher:async(path,options)=>{
+  assert.equal(path,'./api/league-results');
+  const transfer=JSON.parse(options.body);assert.equal(transfer.key,key);
+  uploads.push(transfer.upload);
+  if(uploads.length===1)throw Error('Связь прервалась.');
+  return new Response(JSON.stringify({id:transfer.upload.id,receivedAt:Date.now()}));
+ }});
  const links=()=>Array.from(require('node-html-parser').parse(ui.html()).querySelectorAll('nav a'),link=>link.getAttribute('href'));
  assert.deepEqual(links(),['#tournament','#participants']);
  ui.click({action:'draw'});
@@ -167,13 +174,22 @@ test('organizer prepares, clears and swaps seats before launching the saved draw
  assert.match(ui.html(),/Турнир завершён/);
  assert.deepEqual(links(),activeLinks);
  ui.run('view="standings";render()');
- assert.match(ui.html(),/Передать в Лигу 8Я/);
+ assert.match(ui.html(),/Передать в Клубную лигу 8Я/);
  ui.click({action:'send-league-results'});
- const transfer=new URL(ui.opened[0]);
- assert.equal(transfer.searchParams.get('section'),'results');
- const rows=new URLSearchParams(transfer.hash.slice(1)).get('swisscourt').split('\r\n');
- assert.equal(rows[0],'"Разряд";"Группа";"Игрок 1";"Игрок 2";"Место"');
- assert.match(rows[1],/^"MD";.*;"1"$/);
+ assert.match(ui.node('#dialog').innerHTML,/Ключ подключения/);
+ await ui.run('sendLeagueResults('+JSON.stringify(key)+')');
+ await ui.run('sendLeagueResults('+JSON.stringify(key)+')');
+ assert.deepEqual(uploads[0],uploads[1]);
+ assert.equal(ui.storage.get('swisscourt-league-upload-key'),key);
+ assert.match(ui.node('#dialog').innerHTML,/Результаты отправлены/);
+ const received=D.decode(JSON.stringify(uploads[0].backup));
+ assert.equal(received.closed,true);
+ assert.deepEqual(received.matches[0].scores,[[21,19],[21,18]]);
+ assert.deepEqual(uploads[0].categories[0].rows.map(row=>row.place),[1,2]);
+ assert.doesNotMatch(JSON.stringify(uploads[0].backup),new RegExp(key));
+ await ui.run('sendLeagueResults()');
+ assert.notEqual(uploads[2].id,uploads[0].id);
+ assert.equal(ui.opened.length,0);
 });
 test('new day replacement and backup are explicit; demo remains separate',()=>{
  const s=day(),ui=boot({realState:s});ui.click({action:'new-day'});assert.equal(ui.run('state.entries.length'),8);assert.match(ui.node('#dialog').innerHTML,/Скачать копию/);

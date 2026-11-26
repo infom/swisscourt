@@ -244,7 +244,7 @@ function standings(){
  const drawRules=C.usesDrawRules(state,id);
  return heading('Турнирные таблицы','Положение и показатели по завершённым встречам.',
  (mode==='real'&&state.closed?'<button class="btn" data-action="export-protocol">'+icon('download')+'Скачать протокол тура</button>':'')+
- (mode==='real'&&state.closed?'<button class="btn primary" data-action="send-league-results">Передать в Лигу 8Я</button>':''))+
+ (mode==='real'&&state.closed&&editorReady?'<button class="btn primary" data-action="send-league-results">Передать в Клубную лигу 8Я</button>':''))+
  '<div class="tabs">'+categoryFilters(id,'category',false)+'</div><section class="panel"><div class="panel-heading">'+badge(id)+
  '<strong>'+esc(stageSummary(id))+'</strong>'+
  (state.started&&T.isBracket(state,id)?'<button class="btn small" data-action="full-bracket" data-id="'+id+'">Полная сетка</button>':'')+

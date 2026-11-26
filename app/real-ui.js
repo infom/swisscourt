@@ -113,25 +113,67 @@ function exportProtocol(){
   toast('Протокол тура сохранён.');
  }catch(error){toast(error.message);}
 }
-function sendLeagueResults(){
- if(mode!=='real'||!state.closed)return;
- const rows=[['Разряд','Группа','Игрок 1','Игрок 2','Место']];
- for(const category of state.categories){
-  const code=['MS','WS','MD','WD','XD'].includes(category.code)?category.code:'';
-  const group=category.name.trim().match(/[+\-−]$/)?.[0]||'';
-  for(const result of T.standings(state,category.id)){
-   const [first,second]=result.entry.players;
-   rows.push([code,group,C.playerFullName(first),C.playerFullName(second),result.place??'']);
-  }
- }
- const csv=rows.map(row=>row.map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(';')).join('\r\n');
- const target=new URL('https://d5dvlojr96994pqpp0e9.6brbn2wz.apigw.yandexcloud.net/');
- const levelLabels={ПРОСПОРТ:'prosport',СТАРТ:'start'};
- const label=state.settings.level.trim().toLocaleUpperCase('ru');
- const level=Object.hasOwn(levelLabels,label)?levelLabels[label]:null;
- target.search=new URLSearchParams({view:'admin',section:'results',date:state.settings.date,...(level?{level}:{})});
- target.hash=new URLSearchParams({swisscourt:csv});
- window.open(target.href,'_blank','noopener,noreferrer');
+const leagueConnectionKey='swisscourt-league-upload-key';
+const leagueResultsUrl='https://d5dvlojr96994pqpp0e9.6brbn2wz.apigw.yandexcloud.net/';
+let leaguePending,leagueSending=false;
+
+function leagueLineup(entry){
+ return JSON.stringify(entry.players.map(player=>C.normalizeName(C.playerFullName(player).normalize())).sort());
+}
+function leagueUpload(snapshot){
+ const categories=snapshot.categories.flatMap(category=>{
+  const code=['MS','WS','MD','WD','XD'].includes(category.code)?category.code:category.doubles?'D':'S';
+  const group=(category.name.trim().match(/[+\-−]$/)?.[0]||'').replace('−','-');
+  const rows=T.standings(snapshot,category.id).map(result=>{
+   const entry=result.entry,binding=entry.leagueBinding;
+   return {players:entry.players.map(C.playerFullName),place:result.place??null,
+    ...(binding&&binding.names===leagueLineup(entry)?{binding:{id:binding.id,lineup:binding.lineup,selection:entry.leagueSource}}:{})};
+  });
+  return rows.length?[{code,name:category.name||code,group,rows}]:[];
+ });
+ if(!categories.length)throw Error('В турнире нет результатов для отправки.');
+ return {id:crypto.randomUUID(),categories,backup:snapshot};
+}
+function askLeagueKey(notice=''){
+ const url=leagueResultsUrl+'?view=admin&amp;section=results#swisscourt-inbox';
+ dialog('Подключить SwissCourt к Лиге','Результаты и резервная копия',
+  '<p>Откройте <a href="'+url+'" target="_blank" rel="noopener noreferrer">загрузки SwissCourt в Лиге</a>, создайте ключ подключения и вставьте его сюда.</p>'+
+  '<div class="field"><label for="league-upload-key">Ключ подключения</label><input id="league-upload-key" class="form-control" type="password" autocomplete="off" spellcheck="false" value=""></div>'+
+  '<p id="league-upload-note" role="status">'+esc(notice)+'</p>',cancel+
+  '<button class="btn primary" data-action="send-league-key">Сохранить и отправить</button>');
+}
+async function sendLeagueResults(entered){
+ if(mode!=='real'||!state.closed||!editorReady||leagueSending)return;
+ let key=entered?.trim();
+ if(entered===undefined)try{key=localStorage.getItem(leagueConnectionKey);}catch{}
+ if(!key||! /^[A-Za-z0-9_-]{43}$/.test(key)){askLeagueKey(entered===undefined?'':'Проверьте ключ подключения.');return;}
+ leagueSending=true;
+ try{
+  const serialized=JSON.stringify(state);
+  if(leaguePending?.serialized!==serialized)leaguePending={serialized,upload:leagueUpload(JSON.parse(serialized))};
+  const pending=leaguePending;
+  toast('Отправляем результаты и резервную копию…');
+  const response=await fetch('./api/league-results',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({key,upload:pending.upload}),cache:'no-store',signal:AbortSignal.timeout(26000)});
+  const data=await response.json().catch(()=>null);
+  if(response.status===401){askLeagueKey(data?.error||'Проверьте ключ подключения.');return;}
+  if(response.status===413)throw Error('Результаты и копия вместе превышают 1 МБ.');
+  if(!response.ok||data?.id!==pending.upload.id)throw Error(data?.error||'Лига не подтвердила сохранение.');
+  leaguePending=null;
+  try{localStorage.setItem(leagueConnectionKey,key);}catch{}
+  const target=new URL(leagueResultsUrl);
+  target.search=new URLSearchParams({view:'admin',section:'results',date:pending.upload.backup.settings.date,upload:data.id,
+   ...(data.tour?{tour:String(data.tour)}:{})});
+  const received=new Intl.DateTimeFormat('ru-RU',{dateStyle:'short',timeStyle:'short',timeZone:'Europe/Moscow'}).format(data.receivedAt);
+  dialog('Результаты отправлены',esc(pending.upload.backup.settings.title),
+   '<p>Лига сохранила результаты и резервную копию · '+esc(received)+' МСК.</p>',
+   '<button class="btn" data-action="close">Закрыть</button><a class="btn primary" href="'+esc(target.href)+
+   '" target="_blank" rel="noopener noreferrer">Открыть загрузку в Лиге</a>');
+ }catch(error){
+  const message=(error.name==='TimeoutError'?'Лига не ответила вовремя.':error.message)+' Попробуйте отправить ещё раз.';
+  if($('#dialog').open&&entered!==undefined&&$('#league-upload-note'))$('#league-upload-note').textContent=message;
+  toast(message);
+ }finally{leagueSending=false;}
 }
 function importTargets(data){
  const {code,selection}=data;
@@ -206,13 +248,15 @@ function updateLeagueRoster(day,data,category){
   throw Error('В этот игровой день уже загружены заявки другого тура или уровня лиги.');
  }
  const nameKey=player=>C.normalizeName(C.playerFullName(player).normalize());
- const lineup=entry=>JSON.stringify(entry.players.map(nameKey).sort());
+ const lineup=leagueLineup;
  const previous=day.entries.filter(entry=>entry.leagueSource===source);
  const oldRows=new Map(previous.map(entry=>[lineup(entry),entry]));
  const oldRatings=new Map(previous.flatMap(entry=>entry.players.map(player=>[nameKey(player),player.rating])));
  const manual=new Set(day.entries.filter(entry=>!entry.leagueSource&&entry.category===category).map(lineup));
+ const oldIdsBySource=new Map(previous.filter(entry=>entry.leagueBinding).map(entry=>[entry.leagueBinding.id,entry.id]));
  const imported=data.entries.filter(entry=>!manual.has(lineup(entry))).map(entry=>({
-  id:oldRows.get(lineup(entry))?.id??crypto.randomUUID(),category,leagueSource:source,
+  id:oldIdsBySource.get(entry.id)??oldRows.get(lineup(entry))?.id??crypto.randomUUID(),category,leagueSource:source,
+  ...(entry.id?{leagueBinding:{id:entry.id,lineup:entry.lineup,names:lineup(entry)}}:{}),
   players:entry.players.map(player=>({...player,rating:player.rating??oldRatings.get(nameKey(player))??null}))
  }));
  const replacements=new Map(imported.map(entry=>[entry.id,entry]));
@@ -262,6 +306,7 @@ document.addEventListener('click',event=>{
  case 'backup':backup();break;
  case 'export-protocol':exportProtocol();break;
  case 'send-league-results':sendLeagueResults();break;
+ case 'send-league-key':sendLeagueResults($('#league-upload-key').value);break;
  case 'new-day':dialog('Создать новый день?','Текущий день будет заменён','<p>Сначала сохраните резервную копию. Протокол завершённого тура можно скачать в таблицах. Демонстрационные сценарии хранятся отдельно.</p>','<button class="btn" data-action="backup">Скачать копию</button>'+cancel+'<button class="btn primary" data-action="confirm-new-day">Создать новый день</button>');break;
  case 'confirm-new-day':if(persist(T.newDay())){$('#dialog').close();view='tournament';filter='all';query='';lookupQuery='';rosterCategory='';rosterSelected.clear();location.hash='tournament';render();}break;
  case 'close-day':{

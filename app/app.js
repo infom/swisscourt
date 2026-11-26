@@ -1,6 +1,6 @@
 /* SwissCourt: organizer and public display. */
 'use strict';
-const appVersion='1.5.2';
+const appVersion='1.6.0';
 const C=SwissCourtCore;
 const T=SwissCourtTournament,D=SwissCourtStorage;
 const S=typeof SwissCourtSimulation==="undefined"?null:SwissCourtSimulation;
@@ -214,7 +214,7 @@ function topbar(){
  const canEdit=mode==='real'&&editorReady&&!storageError;
  const action=canEdit&&!state.started?'<button class="btn primary" data-action="draw">Запустить турнир</button>':
   canEdit&&!state.closed&&state.categories.every(c=>T.roundStatus(state,c.id).complete)?'<button class="btn primary" data-action="close-day">Зафиксировать результаты</button>':
-  canEdit&&state.closed&&view!=='standings'?'<button class="btn primary" data-action="send-league-results">Передать в Лигу 8Я</button>':'';
+  canEdit&&state.closed&&view!=='standings'?'<button class="btn primary" data-action="send-league-results">Передать в Клубную лигу 8Я</button>':'';
  return '<header class="topbar"><a class="brand" href="'+(mode==='real'?'#tournament':'#dashboard')+'"><span class="brand-mark">'+icon('court')+
   '</span><strong>SwissCourt</strong><span class="demo-label">v'+appVersion+'</span></a><div class="day-context">'+dayContext()+'</div><div class="top-actions">'+
   (mode==='real'?'<strong class="tournament-status '+status+'" role="status">'+label+'</strong>':'')+action+simulationControls()+

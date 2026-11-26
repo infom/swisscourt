@@ -7,6 +7,8 @@ const datePattern=/^\d{4}-\d{2}-\d{2}$/;
 const labels={prosport:'ПРОСПОРТ',start:'СТАРТ'};
 const validText=value=>typeof value==='string'&&value.length>0&&value.length<=100;
 const invalid=()=>{throw Error('Лига вернула некорректный список заявок.');};
+const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+export const maxLeagueUpload=1024*1024;
 
 function validCategory(category){
  const parts=typeof category?.selection==='string'&&category.selection.match(selectionPattern);
@@ -32,6 +34,7 @@ export async function importLeague(selection,fetcher=fetch){
   url.searchParams.set('tour',tour);
   url.searchParams.set('level',level);
   url.searchParams.set('division',division);
+  url.searchParams.set('ids','1');
  }
  const data=JSON.parse(await readSource(url.href,'application/json',64*1024,fetcher));
  if(selection===undefined){
@@ -44,7 +47,8 @@ export async function importLeague(selection,fetcher=fetch){
  const size=['MS','WS'].includes(data.code)?1:2;
  const entries=data.entries.map(entry=>{
   if(!Array.isArray(entry?.players)||entry.players.length!==size)invalid();
-  return {players:entry.players.map(leaguePlayer)};
+  if((entry.id!==undefined||entry.lineup!==undefined)&&(!uuid.test(entry.id??'')||! /^[a-f0-9]{64}$/.test(entry.lineup??'')))invalid();
+  return {players:entry.players.map(leaguePlayer),...(entry.id?{id:entry.id,lineup:entry.lineup}:{})};
  });
  const warnings=[];
  for(const [key,message] of Object.entries({pending:'Ожидают подтверждения',reserve:'В резерве',search:'В поиске партнёра'})){
@@ -54,4 +58,28 @@ export async function importLeague(selection,fetcher=fetch){
  }
  if(!entries.length)warnings.push('В основном списке нет подтверждённых заявок.');
  return {source:sourceName,selection,date:data.date,venue:data.venue,levelLabel:data.levelLabel,code:data.code,name:data.name,entries,warnings};
+}
+
+export async function forwardLeagueResults({key,upload}={},fetcher=fetch){
+ if(typeof key!=='string'||! /^[A-Za-z0-9_-]{43}$/.test(key))return {status:401,data:{error:'Введите ключ подключения к Лиге.'}};
+ if(!uuid.test(upload?.id??'')||!Array.isArray(upload.categories)||!upload.backup){
+  return {status:400,data:{error:'Ожидаются результаты и резервная копия турнира.'}};
+ }
+ const body=JSON.stringify(upload);
+ if(new TextEncoder().encode(body).length>maxLeagueUpload)return {status:413,data:{error:'Результаты и копия вместе превышают 1 МБ.'}};
+ const target=new URL(leagueUrl);target.searchParams.set('receive','swisscourt');
+ let response;
+ try{
+  response=await fetcher(target.href,{method:'POST',redirect:'manual',
+   headers:{'Content-Type':'application/json','X-SwissCourt-Key':key,Accept:'application/json'},
+   body,cache:'no-store',signal:AbortSignal.timeout(20000)});
+ }catch{return {status:503,data:{error:'Лига не ответила. Попробуйте отправить ещё раз.'}};}
+ const data=await response.json().catch(()=>null);
+ if(!response.ok){
+  const known=[400,401,413,415].includes(response.status);
+  return {status:known?response.status:502,data:{error:known&&typeof data?.error==='string'?data.error:
+   response.status===413?'Результаты и копия вместе превышают 1 МБ.':'Лига не приняла отправку. Попробуйте ещё раз.'}};
+ }
+ if(data?.id!==upload.id||!Number.isFinite(data.receivedAt))return {status:502,data:{error:'Лига не подтвердила сохранение. Попробуйте отправить ещё раз.'}};
+ return {status:200,data:{id:data.id,receivedAt:data.receivedAt,tour:Number.isInteger(data.tour)?data.tour:null}};
 }

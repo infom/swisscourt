@@ -1,9 +1,21 @@
 import {importSource} from './import.mjs';
-import {importLeague} from './league.mjs';
+import {forwardLeagueResults,importLeague,maxLeagueUpload} from './league.mjs';
 import assets from '../dist/assets.generated.mjs';
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Pragma':'no-cache','X-Content-Type-Options':'nosniff'}});
 export default {async fetch(request){
  const url=new URL(request.url);
+ if(url.pathname==='/api/league-results'){
+  if(request.method!=='POST')return json({error:'Используйте POST.'},405);
+  if(request.headers.get('origin')&&request.headers.get('origin')!==url.origin)return json({error:'Запрос доступен только из SwissCourt.'},403);
+  const limit=maxLeagueUpload+4096;
+  if(Number(request.headers.get('content-length'))>limit)return json({error:'Загрузка превышает 1 МБ.'},413);
+  const body=await request.text();
+  if(new TextEncoder().encode(body).length>limit)return json({error:'Загрузка превышает 1 МБ.'},413);
+  let payload;
+  try{payload=JSON.parse(body);}catch{return json({error:'Неверный формат загрузки.'},400);}
+  const result=await forwardLeagueResults(payload??{});
+  return json(result.data,result.status);
+ }
  if(url.pathname==='/api/import'){
   if(request.method!=='POST')return json({error:'Используйте POST.'},405);
   if(request.headers.get('origin')&&request.headers.get('origin')!==url.origin)return json({error:'Запрос доступен только из SwissCourt.'},403);

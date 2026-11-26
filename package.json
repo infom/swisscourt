@@ -1,6 +1,6 @@
 {
   "name": "swisscourt",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "private": true,
   "description": "Локальное приложение для проведения турниров по бадминтону",
   "engines": {
